@@ -20,9 +20,9 @@ This directory is the **single authoritative location** for all decision records
 
 ### Security Decisions
 
-| SDR | Decision     | Date |
-| --- | ------------ | ---- |
-| —   | _(none yet)_ | —    |
+| SDR                                             | Decision                | Date       |
+| ----------------------------------------------- | ----------------------- | ---------- |
+| [SDR-0001](SDR-0001-ethical-fetching-policy.md) | Ethical fetching policy | 2026-03-21 |
 
 ### Data Decisions
 
