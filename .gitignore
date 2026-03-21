@@ -1,0 +1,30 @@
+# Plans and scratch
+.plans/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local agent instructions
+AGENTS.local.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build
+bin/
+dist/
+coverage.out
+coverage.html
+
+# Archive data (large, not committed)
+/data/
+/archive/
