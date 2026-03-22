@@ -146,6 +146,41 @@ func TestLooksLikeHTML(t *testing.T) {
 	}
 }
 
+func TestJinaAPIKey_NeverUsesProviderAuthEnvVar(t *testing.T) {
+	// Simulate a provider with auth_env_var set to a provider-specific secret.
+	// jinaAPIKey must NOT return this value — it would exfiltrate the provider's
+	// credential to the third-party Jina Reader service.
+	t.Setenv("OPENAI_API_KEY", "sk-provider-secret")
+	t.Setenv("JINA_API_KEY", "")
+
+	cfg := ProviderConfig{
+		Slug:       "openai",
+		AuthEnvVar: "OPENAI_API_KEY",
+	}
+
+	key := jinaAPIKey(cfg)
+	if key == "sk-provider-secret" {
+		t.Fatal("jinaAPIKey returned provider credential; this would leak secrets to Jina Reader")
+	}
+	if key != "" {
+		t.Fatalf("jinaAPIKey returned unexpected value: %q", key)
+	}
+}
+
+func TestJinaAPIKey_UsesJinaEnvVar(t *testing.T) {
+	t.Setenv("JINA_API_KEY", "jina_test_key_123")
+
+	cfg := ProviderConfig{
+		Slug:       "openai",
+		AuthEnvVar: "OPENAI_API_KEY",
+	}
+
+	key := jinaAPIKey(cfg)
+	if key != "jina_test_key_123" {
+		t.Fatalf("jinaAPIKey() = %q, want %q", key, "jina_test_key_123")
+	}
+}
+
 func TestCheckJinaResponse_OK(t *testing.T) {
 	// Nil error for 200.
 	resp := &mockHTTPResponse{statusCode: 200}

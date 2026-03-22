@@ -269,16 +269,11 @@ func pathToArchivePath(urlPath string) string {
 	return p + ".md"
 }
 
-// jinaAPIKey resolves the Jina Reader API key from the provider config or
-// the default JINA_API_KEY env var.
-func jinaAPIKey(cfg ProviderConfig) string {
-	// If the provider has an auth_env_var and it's set, use it.
-	if envVar := strings.TrimSpace(cfg.AuthEnvVar); envVar != "" {
-		if key := strings.TrimSpace(os.Getenv(envVar)); key != "" {
-			return key
-		}
-	}
-	// Fall back to the standard Jina env var.
+// jinaAPIKey returns the Jina Reader API key from JINA_API_KEY.
+// This intentionally does NOT use the provider's auth_env_var — that credential
+// belongs to the provider (e.g. OPENAI_API_KEY) and must never be sent to a
+// third-party service like Jina Reader.
+func jinaAPIKey(_ ProviderConfig) string {
 	return strings.TrimSpace(os.Getenv("JINA_API_KEY"))
 }
 
