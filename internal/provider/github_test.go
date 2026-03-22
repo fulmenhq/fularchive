@@ -242,6 +242,24 @@ func TestBuildGitHubRawURL(t *testing.T) {
 	}
 }
 
+func TestGitHubPathToArchivePath(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "_index.md", want: "index.md"},
+		{input: "generated/_index.md", want: "generated/index.md"},
+		{input: "generated/kubectl.md", want: "generated/kubectl.md"},
+	}
+
+	for _, tt := range tests {
+		got := githubPathToArchivePath(tt.input)
+		if got != tt.want {
+			t.Fatalf("githubPathToArchivePath(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestGitHubRawFetcherErrorsWhenNoFilesMatch(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/trinodb/trino" {
