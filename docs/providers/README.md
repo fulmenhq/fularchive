@@ -107,14 +107,38 @@ Verified. Full pipeline working — native `llms-full.txt` fetch, URL-based spli
 ## OpenAI
 
 **Base URL**: `https://platform.openai.com`
-**llms-full.txt**: Not tested.
-**OpenAPI spec**: Was at `https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml` — now 404 (likely moved to `main` branch).
+**llms.txt / llms-full.txt**: 404 — not available.
+**OpenAPI spec**: `https://github.com/openai/openai-openapi` (branch `manual_spec`).
 
-### Fetch Quirks (as of 2026-03-21)
+### Fetch Quirks (as of 2026-03-22)
 
-- **No native .md**: Pages are HTML; need Jina Reader fallback.
-- **OpenAPI spec**: Try `main` branch instead of `master`.
+- **No native .md**: Pages are HTML only. No llms.txt or llms-full.txt endpoints.
+- **Requires Jina Reader**: Use `fetch_strategy: jina` or `auto` (auto detects HTML and falls back to Jina).
+- **OpenAPI spec**: Available at `openai/openai-openapi` on GitHub, branch `manual_spec` (not `master` or `main`).
 
 ### Status
 
-Partially working. 2 pages fetched via HTML. OpenAPI URL needs updating.
+Working via Jina Reader fallback. Chat reference page verified (227KB clean Markdown).
+
+## Jina Reader
+
+**Service URL**: `https://r.jina.ai/<target-url>`
+**License**: Apache 2.0 (service)
+**Auth**: Optional `JINA_API_KEY` env var for higher rate limits.
+
+### How It Works
+
+Jina Reader converts any HTML page to clean Markdown by prepending `https://r.jina.ai/` to the target URL. refbolt sends `Accept: text/markdown` and strips the metadata header (Title, URL Source, Markdown Content lines) from the response.
+
+### Configuration
+
+Set `fetch_strategy: jina` on any provider that serves HTML instead of Markdown. The `auto` strategy will detect HTML responses and fall back to Jina automatically.
+
+For authenticated access (higher rate limits), set `JINA_API_KEY` or configure the provider's `auth_env_var` field.
+
+### Known Limitations
+
+- Third-party service — subject to availability and rate limits (HTTP 429).
+- Very large or complex pages may be truncated or fail (HTTP 422).
+- Output quality varies by site complexity (JavaScript-heavy SPAs may produce sparse content).
+- Free tier has lower rate limits; set `JINA_API_KEY` for production use.
