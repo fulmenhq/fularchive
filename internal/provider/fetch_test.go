@@ -125,3 +125,54 @@ func TestHTTPFetcher_Anthropic_LLMSFullTxt(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPFetcher_OpenAI_JinaWithOpenAPI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network test in short mode")
+	}
+	cfg := ProviderConfig{
+		Slug:          "openai",
+		Name:          "OpenAI",
+		BaseURL:       "https://platform.openai.com",
+		FetchStrategy: StrategyJina,
+		Paths: []string{
+			"/docs/api-reference/chat",
+		},
+		OpenAPIURL: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml",
+	}
+	f, err := NewHTTPFetcher(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pages, err := f.Fetch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Got %d pages", len(pages))
+
+	// Expect at least 2: chat page via Jina + OpenAPI spec.
+	if len(pages) < 2 {
+		t.Fatalf("Expected at least 2 pages (Jina + OpenAPI), got %d", len(pages))
+	}
+
+	found := make(map[string]bool)
+	for _, p := range pages {
+		found[p.Path] = true
+		t.Logf("  %s: %d bytes", p.Path, len(p.Content))
+	}
+
+	if !found["docs/api-reference/chat.md"] {
+		t.Error("Missing chat page")
+	}
+	if !found["openapi.yaml"] {
+		t.Error("Missing OpenAPI spec")
+	}
+
+	// Verify Jina content is clean Markdown, not HTML.
+	for _, p := range pages {
+		if p.Path == "docs/api-reference/chat.md" && looksLikeHTML(p.Content) {
+			t.Error("Chat page content is HTML; expected Markdown from Jina")
+		}
+	}
+}

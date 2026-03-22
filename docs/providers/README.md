@@ -116,9 +116,13 @@ Verified. Full pipeline working — native `llms-full.txt` fetch, URL-based spli
 - **Requires Jina Reader**: Use `fetch_strategy: jina` or `auto` (auto detects HTML and falls back to Jina).
 - **OpenAPI spec**: Available at `openai/openai-openapi` on GitHub, branch `manual_spec` (not `master` or `main`).
 
+### Recommended Strategy
+
+Use `fetch_strategy: jina` with key reference pages: `/docs/api-reference/chat`, `/docs/api-reference/responses`, `/docs/api-reference/assistants`. OpenAPI spec fetched directly from GitHub (`manual_spec` branch).
+
 ### Status
 
-Working via Jina Reader fallback. Chat reference page verified (227KB clean Markdown).
+Verified. Chat, responses, and assistants pages archived via Jina Reader. OpenAPI spec fetched from GitHub.
 
 ## Jina Reader
 
