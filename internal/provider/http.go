@@ -291,13 +291,13 @@ func checkJinaResponse(resp *http.Response, originalURL string) error {
 		if retryAfter != "" {
 			hint = fmt.Sprintf("; retry after %ss", retryAfter)
 		}
-		return fmt.Errorf("Jina Reader rate limit for %s (HTTP 429%s); set JINA_API_KEY for higher limits", originalURL, hint)
+		return fmt.Errorf("jina reader rate limit for %s (HTTP 429%s); set JINA_API_KEY for higher limits", originalURL, hint)
 	case http.StatusPaymentRequired:
-		return fmt.Errorf("Jina Reader requires payment for %s (HTTP 402); check JINA_API_KEY quota", originalURL)
+		return fmt.Errorf("jina reader requires payment for %s (HTTP 402); check JINA_API_KEY quota", originalURL)
 	case http.StatusUnprocessableEntity:
-		return fmt.Errorf("Jina Reader could not process %s (HTTP 422); page may be too complex or blocked", originalURL)
+		return fmt.Errorf("jina reader could not process %s (HTTP 422); page may be too complex or blocked", originalURL)
 	default:
-		return fmt.Errorf("Jina Reader HTTP %d for %s", resp.StatusCode, originalURL)
+		return fmt.Errorf("jina reader HTTP %d for %s", resp.StatusCode, originalURL)
 	}
 }
 
