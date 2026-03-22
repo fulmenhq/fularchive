@@ -26,22 +26,23 @@ refbolt delivers clean, versioned Markdown archives of web documentation with ze
 ## Platform Topology
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    refbolt (Docker / Toolbox)             │
-│                                                             │
-│  ┌────────────────────┐  ┌───────────────────────────────┐  │
-│  │   CLI (Go)         │  │   Providers                   │  │
-│  │  - sync            │  │   - native (.md / OpenAPI)   │  │
-│  │  - status          │  │   - markdown suffix          │  │
-│  │  - diff            │  │   - jina-reader fallback     │  │
-│  └─────────┬──────────┘  └───────────────┬───────────────┘  │
-│            │                             │                   │
-│  ┌─────────┴──────────┐  ┌───────────────┴───────────────┐  │
-│  │   Storage Layer    │  │   Toolbox Integration         │  │
-│  │  /data/archive/    │  │   - ghcr.io/fulmenhq/refbolt│  │
-│  │  YYYY-MM-DD + latest│ │   - runner image + supercronic│  │
-│  └────────────────────┘  └───────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                   refbolt (Docker / Toolbox)              │
+│                                                          │
+│  ┌───────────────────┐  ┌─────────────────────────────┐  │
+│  │   CLI (Go)        │  │   Providers                 │  │
+│  │  - sync           │  │   - native (.md / OpenAPI)  │  │
+│  │  - status         │  │   - markdown suffix         │  │
+│  │  - diff           │  │   - jina-reader fallback    │  │
+│  └────────┬──────────┘  └──────────────┬──────────────┘  │
+│           │                            │                  │
+│  ┌────────┴──────────┐  ┌──────────────┴──────────────┐  │
+│  │  Storage Layer    │  │  Toolbox Integration        │  │
+│  │  /data/archive/   │  │  - ghcr.io/fulmenhq/refbolt│  │
+│  │  YYYY-MM-DD +     │  │  - runner image +           │  │
+│  │  latest symlink   │  │    supercronic scheduling   │  │
+│  └───────────────────┘  └─────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Component Architecture
