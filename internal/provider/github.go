@@ -129,7 +129,7 @@ func (f *GitHubRawFetcher) discoverFiles(ctx context.Context) ([]gitHubFile, err
 	}
 
 	files := make([]gitHubFile, 0, len(payload.Tree))
-	matcher, err := newPatternMatcher(f.cfg.Paths)
+	matcher, err := newPatternMatcher(f.cfg.Slug, f.cfg.Paths)
 	if err != nil {
 		return nil, err
 	}
@@ -349,12 +349,16 @@ type patternMatcher struct {
 	matcher *pathfinder.IgnoreMatcher
 }
 
-func newPatternMatcher(patterns []string) (*patternMatcher, error) {
+func newPatternMatcher(providerSlug string, patterns []string) (*patternMatcher, error) {
 	if len(patterns) == 0 {
 		return &patternMatcher{}, nil
 	}
 
-	ignoreRoot := filepath.Join(os.TempDir(), "fularchive-pathfinder-ignore-root")
+	rootName := "fularchive-pathfinder-ignore-root"
+	if slug := strings.TrimSpace(providerSlug); slug != "" {
+		rootName += "-" + slug
+	}
+	ignoreRoot := filepath.Join(os.TempDir(), rootName)
 	matcher, err := pathfinder.NewIgnoreMatcher(ignoreRoot)
 	if err != nil {
 		return nil, fmt.Errorf("creating path matcher: %w", err)
@@ -378,5 +382,7 @@ func (m *patternMatcher) matches(target string) bool {
 	if target == "" {
 		return false
 	}
+	// We intentionally reuse pathfinder's doublestar-backed ignore matcher as an
+	// inclusion filter here: a configured pattern means "accept this path".
 	return m.matcher.IsIgnored(target)
 }
