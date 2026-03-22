@@ -36,12 +36,15 @@ Providers using the `github-raw` strategy rely on two GitHub surfaces:
 **Base URL**: `https://kubernetes.io/docs/reference/kubectl`
 **GitHub source**: `kubernetes/website`
 **Docs path**: `content/en/docs/reference/kubectl/`
+**Default branch**: `main`
 
-### Fetch Quirks (as of 2026-03-21)
+### Fetch Quirks (as of 2026-03-22)
 
 - **Strict scope control required**: The full repo is large; keep this provider limited to the kubectl reference subtree.
 - **Auth recommended**: GitHub tree discovery should use `GITHUB_TOKEN` for routine runs.
 - **Hugo `_index.md` convention**: Archive `_index.md` pages as `index.md` so directory landing pages remain stable.
+- **Subtree size drifted upward**: The kubectl subtree currently contains 121 Markdown files, which is higher than the older ~50-page estimate in the original task brief.
+- **robots.txt nuance**: Kubernetes disallows `/docs/reference/kubernetes-api/`, but does not specifically disallow the kubectl reference path mirrored by this provider.
 
 ## xAI / Grok
 
