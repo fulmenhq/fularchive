@@ -163,8 +163,8 @@ func (f *HTTPFetcher) fetchViaJina(ctx context.Context, rawURL, archivePath stri
 	req.Header.Set("User-Agent", "refbolt/0.1 (+https://github.com/fulmenhq/refbolt)")
 	req.Header.Set("Accept", "text/markdown")
 
-	// Jina auth: use provider's auth_env_var if set to JINA_API_KEY (or similar),
-	// otherwise fall back to JINA_API_KEY directly.
+	// Jina auth: uses only JINA_API_KEY — never the provider's auth_env_var,
+	// which belongs to the provider and must not be sent to third parties.
 	if apiKey := jinaAPIKey(f.cfg); apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}

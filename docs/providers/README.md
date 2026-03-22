@@ -141,7 +141,7 @@ Jina Reader converts any HTML page to clean Markdown by prepending `https://r.ji
 
 Set `fetch_strategy: jina` on any provider that serves HTML instead of Markdown. The `auto` strategy will detect HTML responses and fall back to Jina automatically.
 
-For authenticated access (higher rate limits), set `JINA_API_KEY` or configure the provider's `auth_env_var` field.
+For authenticated access (higher rate limits), set the `JINA_API_KEY` environment variable. Provider-specific credentials (e.g., `OPENAI_API_KEY`) are never sent to Jina.
 
 ### Known Limitations
 

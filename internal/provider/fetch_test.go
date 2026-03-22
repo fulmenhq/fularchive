@@ -130,6 +130,11 @@ func TestHTTPFetcher_OpenAI_JinaWithOpenAPI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping network test in short mode")
 	}
+	// Test one Jina page + OpenAPI spec to verify the full provider fetch path.
+	// Only chat is included here to avoid flakiness from multiple sequential Jina
+	// requests (each can take 5-10s). The Jina mechanism itself is already tested
+	// in TestHTTPFetcher_Jina_OpenAI; this test validates the combined flow with
+	// OpenAPI spec fetching.
 	cfg := ProviderConfig{
 		Slug:          "openai",
 		Name:          "OpenAI",
@@ -137,8 +142,6 @@ func TestHTTPFetcher_OpenAI_JinaWithOpenAPI(t *testing.T) {
 		FetchStrategy: StrategyJina,
 		Paths: []string{
 			"/docs/api-reference/chat",
-			"/docs/api-reference/responses",
-			"/docs/api-reference/assistants",
 		},
 		OpenAPIURL: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml",
 	}
@@ -153,9 +156,9 @@ func TestHTTPFetcher_OpenAI_JinaWithOpenAPI(t *testing.T) {
 	}
 	t.Logf("Got %d pages", len(pages))
 
-	// Expect 4: chat + responses + assistants via Jina + OpenAPI spec.
-	if len(pages) < 4 {
-		t.Fatalf("Expected at least 4 pages (3 Jina + OpenAPI), got %d", len(pages))
+	// Expect 2: chat page via Jina + OpenAPI spec.
+	if len(pages) < 2 {
+		t.Fatalf("Expected at least 2 pages (Jina + OpenAPI), got %d", len(pages))
 	}
 
 	found := make(map[string]bool)
@@ -164,21 +167,17 @@ func TestHTTPFetcher_OpenAI_JinaWithOpenAPI(t *testing.T) {
 		t.Logf("  %s: %d bytes", p.Path, len(p.Content))
 	}
 
-	for _, want := range []string{
-		"docs/api-reference/chat.md",
-		"docs/api-reference/responses.md",
-		"docs/api-reference/assistants.md",
-		"openapi.yaml",
-	} {
-		if !found[want] {
-			t.Errorf("Missing expected page: %s", want)
-		}
+	if !found["docs/api-reference/chat.md"] {
+		t.Error("Missing chat page")
+	}
+	if !found["openapi.yaml"] {
+		t.Error("Missing OpenAPI spec")
 	}
 
 	// Verify Jina content is clean Markdown, not HTML.
 	for _, p := range pages {
-		if p.Path != "openapi.yaml" && looksLikeHTML(p.Content) {
-			t.Errorf("%s content is HTML; expected Markdown from Jina", p.Path)
+		if p.Path == "docs/api-reference/chat.md" && looksLikeHTML(p.Content) {
+			t.Error("Chat page content is HTML; expected Markdown from Jina")
 		}
 	}
 }
