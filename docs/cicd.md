@@ -106,43 +106,63 @@ make clean          # purge bin/, dist/, Go caches
 
 ## CI Workflows
 
+refbolt is pure Go with `CGO_ENABLED=0`. This means all cross-compilation happens from a single Linux runner — no platform-specific build matrices, no C toolchains, no manual Go bindings steps. As long as we stay CGO-free, the CI pipeline remains a single-job build.
+
 ### `.github/workflows/ci.yml`
 
-Runs on push to `main` and on pull requests:
+**Trigger:** push to `main` or any pull request.
 
-1. **format-check** — yamlfmt + prettier via goneat-tools-runner container
-2. **build-test** — fmt diff check, golangci-lint, `make test-short`, `make build`, smoke test
+| Job            | Depends on     | What it does                                                                                                                 |
+| -------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `format-check` | —              | yamlfmt + prettier via `goneat-tools-runner` container                                                                       |
+| `build-test`   | `format-check` | `make fmt` + diff check, golangci-lint v2, `make test-short`, `make build`, smoke test (`refbolt version`, `refbolt --help`) |
 
-All builds use `CGO_ENABLED=0` — refbolt is pure Go.
+Both jobs run in the `ghcr.io/fulmenhq/goneat-tools-runner:v0.2.1` container. Go is installed via `actions/setup-go` (1.25.x). Tests run in short mode — no live network calls, no git integration tests.
 
 ### `.github/workflows/release.yml`
 
-Runs on `v*` tag push:
+**Trigger:** push of a `v*` tag (e.g., `git push origin v0.2.0`).
 
-1. Validates VERSION file matches tag
-2. Runs lint + test-short
-3. Builds multi-platform release artifacts via `make release-build`
-4. Creates a **draft** GitHub Release with artifacts attached
+| Step                    | What it does                                                             |
+| ----------------------- | ------------------------------------------------------------------------ |
+| Validate VERSION        | Fails if `VERSION` file content does not match the pushed tag            |
+| Lint + test             | `make lint` + `make test-short`                                          |
+| Build release artifacts | `make release-build` — 5 binaries (linux/darwin × amd64/arm64 + windows) |
+| Publish draft release   | `softprops/action-gh-release` with `draft: true` + all `dist/release/*`  |
 
-Draft releases require manual review and publishing. Signing is done locally after downloading CI-built artifacts (see `RELEASE_CHECKLIST.md`).
+The release is created as a **draft**. After CI completes:
+
+1. Download the CI-built artifacts locally (`make release-download`)
+2. Sign checksum manifests with minisign/PGP (`make release-sign`)
+3. Upload provenance assets (`make release-upload`)
+4. Review and publish the draft release on GitHub
+
+See `RELEASE_CHECKLIST.md` for the full step-by-step procedure.
+
+### What does NOT trigger CI
+
+- Pushes to feature branches without a PR — open a PR to get CI
+- Manual workflow dispatch — not configured (add if needed later)
+- Nightly full test suite — not configured; run `make test` locally for live network coverage
 
 ## Release Signing
 
 ### Environment Variables
 
-Source CI/CD credentials before signing:
+The following variables must be set before signing. Store them in a credentials file outside the repo to keep signing keys out of version control.
+
+| Variable               | Purpose                          | Example                                                  |
+| ---------------------- | -------------------------------- | -------------------------------------------------------- |
+| `REFBOLT_GPG_HOMEDIR`  | GnuPG home directory for signing | `~/vault/fulmenhq-gpg`                                   |
+| `REFBOLT_PGP_KEY_ID`   | PGP signing key fingerprint      | `448A539320A397AF!`                                      |
+| `REFBOLT_MINISIGN_KEY` | Path to minisign private key     | `~/vault/fulmenhq-minisign/fulmenhq-release-signing.key` |
+| `REFBOLT_MINISIGN_PUB` | Path to minisign public key      | `~/vault/fulmenhq-minisign/fulmenhq-release-signing.pub` |
+| `REFBOLT_VERSION_TAG`  | Release tag for this release     | `v0.2.0`                                                 |
+
+The first four are stable across releases. `REFBOLT_VERSION_TAG` is set per release so the credentials file does not need to change.
 
 ```bash
-source ~/devsecops/vars/fulmenhq-refbolt-cicd.sh
+# Source your credentials file, then set the release tag
+source <your-credentials-file>
 export REFBOLT_VERSION_TAG=v<version>
 ```
-
-| Variable               | Purpose                          | Source                     |
-| ---------------------- | -------------------------------- | -------------------------- |
-| `REFBOLT_GPG_HOMEDIR`  | GnuPG home directory for signing | `fulmenhq-refbolt-cicd.sh` |
-| `REFBOLT_PGP_KEY_ID`   | PGP signing key fingerprint      | `fulmenhq-refbolt-cicd.sh` |
-| `REFBOLT_MINISIGN_KEY` | Path to minisign private key     | `fulmenhq-refbolt-cicd.sh` |
-| `REFBOLT_MINISIGN_PUB` | Path to minisign public key      | `fulmenhq-refbolt-cicd.sh` |
-| `REFBOLT_VERSION_TAG`  | Release tag (e.g., `v0.2.0`)     | Set separately per release |
-
-The first four are stable across releases. `REFBOLT_VERSION_TAG` is set separately so the vars file does not change per release.
