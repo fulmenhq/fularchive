@@ -59,6 +59,12 @@ func NewClient(archiveRoot string) (*Client, error) {
 		return nil, fmt.Errorf("archive root %q is outside git repository %q", absArchive, repoRoot)
 	}
 
+	// Reject archive_root == repoRoot: relArchive would be "." and
+	// git add would stage the entire worktree (code, config, credentials).
+	if relArchive == "." {
+		return nil, fmt.Errorf("archive root %q is the git repository root; must be a dedicated subdirectory to prevent staging non-archive files", absArchive)
+	}
+
 	return &Client{
 		archiveRoot: absArchive,
 		repoRoot:    repoRoot,
@@ -74,6 +80,17 @@ func (c *Client) HasChanges() (bool, error) {
 		return false, fmt.Errorf("git status failed: %w", err)
 	}
 	return strings.TrimSpace(out) != "", nil
+}
+
+// DirtyLines returns git status --porcelain output for the archive root.
+// Non-empty result means there are pre-existing changes that the current
+// sync did not produce.
+func (c *Client) DirtyLines() (string, error) {
+	out, err := runGit(c.repoRoot, "status", "--porcelain", c.relArchive)
+	if err != nil {
+		return "", fmt.Errorf("git status failed: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // StageArchive stages all changes under the archive root.

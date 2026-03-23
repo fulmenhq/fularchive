@@ -56,6 +56,17 @@ func TestNewClient_ArchiveOutsideRepo(t *testing.T) {
 	}
 }
 
+func TestNewClient_ArchiveIsRepoRoot(t *testing.T) {
+	repo := initTestRepo(t)
+	_, err := NewClient(repo)
+	if err == nil {
+		t.Fatal("expected error when archive root is the git repo root")
+	}
+	if !strings.Contains(err.Error(), "repository root") {
+		t.Errorf("expected 'repository root' error, got: %v", err)
+	}
+}
+
 func TestNewClient_ArchiveInsideRepo(t *testing.T) {
 	repo := initTestRepo(t)
 	archiveDir := filepath.Join(repo, "archive")
@@ -90,6 +101,56 @@ func TestHasChanges_NoChanges(t *testing.T) {
 	}
 	if has {
 		t.Error("expected no changes in empty archive dir")
+	}
+}
+
+func TestDirtyLines_CleanArchive(t *testing.T) {
+	repo := initTestRepo(t)
+	archiveDir := filepath.Join(repo, "archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := NewClient(archiveDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dirt, err := c.DirtyLines()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirt != "" {
+		t.Errorf("expected empty dirt on clean archive, got: %q", dirt)
+	}
+}
+
+func TestDirtyLines_PreExistingChanges(t *testing.T) {
+	repo := initTestRepo(t)
+	archiveDir := filepath.Join(repo, "archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate pre-existing dirt: a file from a prior run.
+	if err := os.WriteFile(filepath.Join(archiveDir, "stale.md"), []byte("old content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := NewClient(archiveDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dirt, err := c.DirtyLines()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirt == "" {
+		t.Error("expected non-empty dirt for pre-existing changes")
+	}
+	if !strings.Contains(dirt, "archive") {
+		t.Errorf("expected dirt to reference archive path, got: %q", dirt)
 	}
 }
 
