@@ -1,0 +1,60 @@
+FROM golang:1.25.5 AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+ENV CGO_ENABLED=0
+
+RUN go build \
+    -ldflags="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
+    -o /out/refbolt \
+    ./cmd/refbolt
+
+FROM debian:trixie-slim AS supercronic
+
+ARG TARGETARCH
+ARG SUPERCRONIC_VERSION=v0.2.44
+ARG SUPERCRONIC_SHA256_AMD64=6feff7d5eba16a89cf229b7eb644cfae2f03a32c62ca320f17654659315275b6
+ARG SUPERCRONIC_SHA256_ARM64=ec29b3129ab20100971d21d391150d50398e5caaa33b8652eab919e2c5143057
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN case "${TARGETARCH}" in \
+        amd64) asset="supercronic-linux-amd64"; sha256="${SUPERCRONIC_SHA256_AMD64}" ;; \
+        arm64) asset="supercronic-linux-arm64"; sha256="${SUPERCRONIC_SHA256_ARM64}" ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /usr/local/bin/supercronic \
+        "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/${asset}" \
+    && echo "${sha256}  /usr/local/bin/supercronic" | sha256sum -c - \
+    && chmod +x /usr/local/bin/supercronic
+
+FROM debian:trixie-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/refbolt /usr/local/bin/refbolt
+COPY --from=supercronic /usr/local/bin/supercronic /usr/local/bin/supercronic
+COPY docker/runner-entrypoint.sh /usr/local/bin/refbolt-runner
+
+RUN chmod +x /usr/local/bin/refbolt-runner \
+    && mkdir -p /etc/refbolt
+
+ENV SUPERCRONIC_CRONTAB=/etc/refbolt/crontab
+VOLUME ["/data/archive"]
+
+ENTRYPOINT ["/usr/local/bin/refbolt-runner"]
