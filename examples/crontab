@@ -1,0 +1,3 @@
+# Standard 5-field cron format.
+# Set TZ on the container to control local schedule interpretation.
+0 6 * * * /usr/local/bin/refbolt sync --all --verbose

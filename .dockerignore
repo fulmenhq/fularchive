@@ -12,3 +12,4 @@ dist
 archive
 coverage.out
 coverage.html
+.tmp-refbolt-docker

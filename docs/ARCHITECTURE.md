@@ -113,9 +113,23 @@ docker run --rm \
   refbolt:local sync --all --verbose
 ```
 
-### Planned: Runner image + docker-compose
+### Available: Runner image
 
-Daily cron via supercronic (Dockerfile and docker-compose.yml not yet checked in).
+```bash
+make docker-build-runner
+docker run --rm refbolt-runner:local refbolt version
+docker run --rm \
+  -e REFBOLT_CONFIG=/work/providers.yaml \
+  -e TZ=America/New_York \
+  -v ./configs/providers.yaml:/work/providers.yaml:ro \
+  -v ./archive:/data/archive \
+  -v ./examples/crontab:/etc/refbolt/crontab:ro \
+  refbolt-runner:local
+```
+
+### Planned: docker-compose
+
+Daily cron via supercronic is available in the runner image. docker-compose wiring remains future work.
 
 ### Planned: CI via GitHub Actions
 
