@@ -17,12 +17,15 @@ jobs:
     env:
       FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
       CGO_ENABLED: "0"
+      GOPATH: /home/runner/go
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Prepare Go directories
+        run: mkdir -p "$GOPATH/bin"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
