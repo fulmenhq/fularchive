@@ -34,8 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           yamlfmt -lint .
-          prettier --check "**/*.{md,json}" || \
-            echo "Prettier differences found (non-blocking)"
+          prettier --check "**/*.{md,json}"
   # Build and test using goneat-tools-runner container
   # Runner provides foundation tools + goneat/sfetch; Go is set up separately.
   # CGO_ENABLED=0: refbolt is pure Go — no cgo dependencies.

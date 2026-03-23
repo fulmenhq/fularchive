@@ -77,13 +77,20 @@ source <your-credentials-file>
 export REFBOLT_VERSION_TAG=v<version>
 ```
 
-### Release Artifacts & Signing
+### Tag and Push
 
-Follow the Fulmen "manifest-only" provenance pattern:
+Create the tag and push it first — this triggers the release workflow which builds artifacts and creates a draft GitHub Release.
 
-- Generate SHA256 + SHA512 manifests
-- Sign manifests with minisign (primary) and optionally PGP
-- Ship trust anchors (public keys) with the release
+- [ ] Create annotated git tag: `git tag -a v<version> -m "Release v<version>"`
+- [ ] Verify tag: `git tag -v v<version>`
+- [ ] Push commits: `git push origin main`
+- [ ] Push tag: `git push origin v<version>`
+- [ ] Wait for release workflow to complete (check GitHub Actions)
+- [ ] Verify draft GitHub Release appears with CI-built artifacts
+
+### Sign and Upload Provenance
+
+After the draft release is created by CI, download its artifacts locally for signing. Follow the Fulmen "manifest-only" provenance pattern: sign checksum manifests (not individual binaries), ship public keys with the release.
 
 - [ ] (Recommended) Download CI-built artifacts and (re)generate manifests:
 
@@ -96,7 +103,7 @@ Follow the Fulmen "manifest-only" provenance pattern:
 
   This path uses GitHub Release artifacts built in CI and avoids local build drift.
 
-- [ ] (Alternative) Build artifacts locally:
+- [ ] (Alternative) Build artifacts locally (if CI build is unavailable):
 
   ```bash
   make release-build
@@ -119,13 +126,10 @@ Follow the Fulmen "manifest-only" provenance pattern:
 - [ ] Upload provenance assets: `make release-upload RELEASE_TAG=$REFBOLT_VERSION_TAG`
   - For fully manual release (no CI artifacts): `make release-upload-all RELEASE_TAG=$REFBOLT_VERSION_TAG`
 
-### Tagging
+### Publish
 
-- [ ] Create annotated git tag: `git tag -a v<version> -m "Release v<version>"`
-- [ ] Verify tag: `git tag -v v<version>`
-- [ ] Push commits: `git push origin main`
-- [ ] Push tag: `git push origin v<version>`
-- [ ] Verify GitHub release appears (draft — review and publish)
+- [ ] Review the draft release on GitHub (verify artifacts, notes, signatures)
+- [ ] Publish the release
 
 ### Docker Images
 
