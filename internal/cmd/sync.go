@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fulmenhq/refbolt/internal/archive"
 	"github.com/fulmenhq/refbolt/internal/config"
@@ -11,11 +12,14 @@ import (
 )
 
 var (
-	syncAll     bool
-	gitCommit   bool
-	gitPush     bool
-	gitBranch   string
-	gitTrailers []string
+	syncAll          bool
+	providerSlugs    []string
+	topicSlugs       []string
+	excludeProviders []string
+	gitCommit        bool
+	gitPush          bool
+	gitBranch        string
+	gitTrailers      []string
 )
 
 var syncCmd = &cobra.Command{
@@ -30,6 +34,12 @@ var syncCmd = &cobra.Command{
 		if len(topics) == 0 {
 			fmt.Println("No topics configured.")
 			return nil
+		}
+
+		// Resolve which providers to sync.
+		selected, err := resolveProviders(topics, syncAll, providerSlugs, topicSlugs, excludeProviders)
+		if err != nil {
+			return err
 		}
 
 		archiveRoot := config.ArchiveRoot()
@@ -57,42 +67,36 @@ var syncCmd = &cobra.Command{
 
 		var syncResults []gitpkg.SyncResult
 
-		for _, topic := range topics {
-			fmt.Printf("Topic: %s\n", topic.Slug)
-			for _, pc := range topic.Providers {
-				if !pc.IsEnabled() {
-					fmt.Printf("  %s: skipped (disabled)\n", pc.Slug)
-					continue
-				}
-				fmt.Printf("  %s: fetching...\n", pc.Slug)
+		for _, sp := range selected {
+			fmt.Printf("Topic: %s\n", sp.topicSlug)
+			fmt.Printf("  %s: fetching...\n", sp.cfg.Slug)
 
-				fetcher, err := provider.NewFetcher(pc)
-				if err != nil {
-					fmt.Printf("  %s: error creating fetcher: %v\n", pc.Slug, err)
-					continue
-				}
+			fetcher, err := provider.NewFetcher(sp.cfg)
+			if err != nil {
+				fmt.Printf("  %s: error creating fetcher: %v\n", sp.cfg.Slug, err)
+				continue
+			}
 
-				pages, err := fetcher.Fetch(cmd.Context())
-				if err != nil {
-					fmt.Printf("  %s: error fetching: %v\n", pc.Slug, err)
-					continue
-				}
+			pages, err := fetcher.Fetch(cmd.Context())
+			if err != nil {
+				fmt.Printf("  %s: error fetching: %v\n", sp.cfg.Slug, err)
+				continue
+			}
 
-				written, err := writer.Write(topic.Slug, pc.Slug, pages)
-				if err != nil {
-					fmt.Printf("  %s: error writing: %v\n", pc.Slug, err)
-					continue
-				}
+			written, err := writer.Write(sp.topicSlug, sp.cfg.Slug, pages)
+			if err != nil {
+				fmt.Printf("  %s: error writing: %v\n", sp.cfg.Slug, err)
+				continue
+			}
 
-				fmt.Printf("  %s: wrote %d files\n", pc.Slug, written)
+			fmt.Printf("  %s: wrote %d files\n", sp.cfg.Slug, written)
 
-				if written > 0 {
-					syncResults = append(syncResults, gitpkg.SyncResult{
-						TopicSlug:    topic.Slug,
-						ProviderSlug: pc.Slug,
-						FilesWritten: written,
-					})
-				}
+			if written > 0 {
+				syncResults = append(syncResults, gitpkg.SyncResult{
+					TopicSlug:    sp.topicSlug,
+					ProviderSlug: sp.cfg.Slug,
+					FilesWritten: written,
+				})
 			}
 		}
 
@@ -134,8 +138,141 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+// selectedProvider pairs a provider config with its parent topic slug.
+type selectedProvider struct {
+	topicSlug string
+	cfg       provider.ProviderConfig
+}
+
+// resolveProviders applies the selection semantics defined in FA-081:
+//  1. Require at least one positive selector: --all, --topic, or --provider
+//  2. Union positive selectors
+//  3. enabled: false applies to --all and --topic only; --provider overrides it
+//  4. --exclude-provider removes from the resolved set
+//  5. Error on unknown slugs, conflicts, or empty result
+func resolveProviders(
+	topics []config.Topic,
+	all bool,
+	providerFlags, topicFlags, excludeFlags []string,
+) ([]selectedProvider, error) {
+	if !all && len(providerFlags) == 0 && len(topicFlags) == 0 {
+		return nil, fmt.Errorf("no providers selected; use --all, --provider, or --topic")
+	}
+
+	// Build lookup indexes.
+	allProviderSlugs := make(map[string]bool)
+	allTopicSlugs := make(map[string]bool)
+	for _, t := range topics {
+		allTopicSlugs[t.Slug] = true
+		for _, p := range t.Providers {
+			allProviderSlugs[p.Slug] = true
+		}
+	}
+
+	// Validate unknown slugs.
+	for _, s := range providerFlags {
+		if !allProviderSlugs[s] {
+			return nil, fmt.Errorf("unknown provider slug: %q", s)
+		}
+	}
+	for _, s := range topicFlags {
+		if !allTopicSlugs[s] {
+			return nil, fmt.Errorf("unknown topic slug: %q", s)
+		}
+	}
+	for _, s := range excludeFlags {
+		if !allProviderSlugs[s] {
+			return nil, fmt.Errorf("unknown provider slug in --exclude-provider: %q", s)
+		}
+	}
+
+	// Check for conflicts: same slug in --provider and --exclude-provider.
+	explicitSet := make(map[string]bool)
+	for _, s := range providerFlags {
+		explicitSet[s] = true
+	}
+	for _, s := range excludeFlags {
+		if explicitSet[s] {
+			return nil, fmt.Errorf("provider %q appears in both --provider and --exclude-provider", s)
+		}
+	}
+
+	// Build the selected set.
+	topicSet := make(map[string]bool)
+	for _, s := range topicFlags {
+		topicSet[s] = true
+	}
+	excludeSet := make(map[string]bool)
+	for _, s := range excludeFlags {
+		excludeSet[s] = true
+	}
+
+	seen := make(map[string]bool)
+	var result []selectedProvider
+
+	for _, t := range topics {
+		for _, p := range t.Providers {
+			if seen[p.Slug] {
+				continue
+			}
+
+			selected := false
+
+			// Explicit --provider always selects, ignoring enabled flag.
+			if explicitSet[p.Slug] {
+				selected = true
+			}
+
+			// --all or matching --topic selects if enabled.
+			if !selected && (all || topicSet[t.Slug]) {
+				if !p.IsEnabled() {
+					continue
+				}
+				selected = true
+			}
+
+			if !selected {
+				continue
+			}
+
+			// Apply exclusions.
+			if excludeSet[p.Slug] {
+				continue
+			}
+
+			seen[p.Slug] = true
+			result = append(result, selectedProvider{
+				topicSlug: t.Slug,
+				cfg:       p,
+			})
+		}
+	}
+
+	if len(result) == 0 {
+		var parts []string
+		if all {
+			parts = append(parts, "--all")
+		}
+		for _, s := range topicFlags {
+			parts = append(parts, "--topic "+s)
+		}
+		for _, s := range providerFlags {
+			parts = append(parts, "--provider "+s)
+		}
+		for _, s := range excludeFlags {
+			parts = append(parts, "--exclude-provider "+s)
+		}
+		return nil, fmt.Errorf("no providers matched after filtering (%s)", strings.Join(parts, ", "))
+	}
+
+	return result, nil
+}
+
 func init() {
 	syncCmd.Flags().BoolVar(&syncAll, "all", false, "Sync all configured providers")
+	syncCmd.Flags().StringArrayVar(&providerSlugs, "provider", nil, "Sync specific provider(s) by slug (repeatable)")
+	syncCmd.Flags().StringArrayVar(&topicSlugs, "topic", nil, "Sync all providers in topic(s) (repeatable)")
+	syncCmd.Flags().StringArrayVar(&excludeProviders, "exclude-provider", nil, "Exclude provider(s) from sync (repeatable)")
 	syncCmd.Flags().BoolVar(&gitCommit, "git-commit", false, "Stage archive changes and commit after sync")
 	syncCmd.Flags().BoolVar(&gitPush, "git-push", false, "Push after commit (requires --git-commit)")
 	syncCmd.Flags().StringVar(&gitBranch, "git-branch", "", "Remote branch to push to (default: current branch)")
