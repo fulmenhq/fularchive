@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // FetchStrategy controls how content is retrieved from a provider.
@@ -49,7 +50,19 @@ type ProviderConfig struct {
 	GitHubBranch   string           `yaml:"github_branch,omitempty"`
 	RateLimit      *RateLimitConfig `yaml:"rate_limit,omitempty"`
 	AuthEnvVar     string           `yaml:"auth_env_var,omitempty"`
+	FetchTimeout   time.Duration    `yaml:"fetch_timeout,omitempty"`
 	Enabled        *bool            `yaml:"enabled,omitempty"`
+}
+
+// DefaultFetchTimeout is the timeout used when fetch_timeout is not set.
+const DefaultFetchTimeout = 30 * time.Second
+
+// EffectiveFetchTimeout returns the provider's configured timeout or the default.
+func (c *ProviderConfig) EffectiveFetchTimeout() time.Duration {
+	if c.FetchTimeout > 0 {
+		return c.FetchTimeout
+	}
+	return DefaultFetchTimeout
 }
 
 // IsEnabled returns whether this provider is active (defaults to true).

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,7 +23,7 @@ type HTTPFetcher struct {
 	client *http.Client
 }
 
-func newHTTPClient() *http.Client {
+func newHTTPClient(timeout time.Duration) *http.Client {
 	// Some doc sites return 404 when Go's default HTTP/2 ALPN is negotiated.
 	// Using HTTP/1.1 only resolves this compatibility issue.
 	transport := &http.Transport{
@@ -31,7 +33,7 @@ func newHTTPClient() *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   timeout,
 		Transport: transport,
 	}
 }
@@ -43,7 +45,7 @@ func NewHTTPFetcher(cfg ProviderConfig) (*HTTPFetcher, error) {
 	}
 	return &HTTPFetcher{
 		cfg:    cfg,
-		client: newHTTPClient(),
+		client: newHTTPClient(cfg.EffectiveFetchTimeout()),
 	}, nil
 }
 
@@ -153,10 +155,39 @@ func (f *HTTPFetcher) fetchDirect(ctx context.Context, rawURL, archivePath strin
 // fetchViaJina fetches a URL through Jina Reader for HTML-to-Markdown conversion.
 // Jina Reader converts HTML pages to clean Markdown by prepending https://r.jina.ai/
 // to the target URL. Supports optional API key auth for higher rate limits.
+//
+// On timeout-shaped errors, retries once with 2x the provider timeout.
+// Non-timeout errors (4xx, 5xx, connection refused, etc.) are not retried.
 func (f *HTTPFetcher) fetchViaJina(ctx context.Context, rawURL, archivePath string) (*Page, error) {
 	jinaURL := "https://r.jina.ai/" + rawURL
+	return f.doJinaFetchWithRetry(ctx, jinaURL, archivePath)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jinaURL, nil)
+// doJinaFetchWithRetry wraps doJinaFetch with one timeout retry at 2x timeout.
+func (f *HTTPFetcher) doJinaFetchWithRetry(ctx context.Context, fetchURL, archivePath string) (*Page, error) {
+	timeout := f.cfg.EffectiveFetchTimeout()
+
+	page, err := f.doJinaFetch(ctx, fetchURL, archivePath, timeout)
+	if err != nil && isTimeoutError(err) {
+		retryTimeout := timeout * 2
+		fmt.Printf("    Jina timeout for %s (%s), retrying with %s...\n", fetchURL, timeout, retryTimeout)
+		page, err = f.doJinaFetch(ctx, fetchURL, archivePath, retryTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("fetching %s via Jina failed after retry (timeout: %s → %s): %w\n  Hint: increase fetch_timeout for this provider in providers.yaml", fetchURL, timeout, retryTimeout, err)
+		}
+	}
+	return page, err
+}
+
+// doJinaFetch performs a single Jina Reader fetch with the given timeout.
+func (f *HTTPFetcher) doJinaFetch(ctx context.Context, fetchURL, archivePath string, timeout time.Duration) (*Page, error) {
+
+	// Use a per-request timeout via context, not the client-level timeout,
+	// so retries can use a different deadline without rebuilding the client.
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating Jina request: %w", err)
 	}
@@ -171,13 +202,13 @@ func (f *HTTPFetcher) fetchViaJina(ctx context.Context, rawURL, archivePath stri
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s via Jina: %w", rawURL, err)
+		return nil, fmt.Errorf("fetching %s via Jina: %w", fetchURL, err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
-	if err := checkJinaResponse(resp, rawURL); err != nil {
+	if err := checkJinaResponse(resp, fetchURL); err != nil {
 		return nil, err
 	}
 
@@ -191,10 +222,23 @@ func (f *HTTPFetcher) fetchViaJina(ctx context.Context, rawURL, archivePath stri
 	content := stripJinaHeader(body)
 
 	return &Page{
-		SourceURL: rawURL,
+		SourceURL: fetchURL,
 		Path:      archivePath,
 		Content:   content,
 	}, nil
+}
+
+// isTimeoutError returns true if the error is a timeout-shaped failure
+// (context deadline exceeded, net timeout, i/o timeout).
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return false
 }
 
 // fetchURL does the actual HTTP GET and returns a Page.
