@@ -195,6 +195,16 @@ properties:
           - JINA_API_KEY
           - OPENAI_API_KEY
           - GITHUB_TOKEN
+      fetch_timeout:
+        type: string
+        description: >-
+          HTTP fetch timeout for this provider. Parsed as a Go duration string (e.g., "30s", "90s", "2m"). Applies to all HTTP requests for this provider. Defaults to 30s. Increase for providers with large or JS-heavy pages that need more render time (e.g., via Jina Reader).
+        pattern: "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$"
+        default: "30s"
+        examples:
+          - "30s"
+          - "90s"
+          - "2m"
       enabled:
         type: boolean
         description: Whether this provider is active. Defaults to true.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fulmenhq/gofulmen/logging"
 	"github.com/fulmenhq/gofulmen/schema"
@@ -209,6 +210,7 @@ func Topics() []Topic {
 				GitHubDocsPath: stringVal(pm, "github_docs_path"),
 				GitHubBranch:   stringVal(pm, "github_branch"),
 				AuthEnvVar:     stringVal(pm, "auth_env_var"),
+				FetchTimeout:   durationVal(pm, "fetch_timeout"),
 				Enabled:        boolPtrVal(pm, "enabled"),
 			}
 			if rm, ok := pm["rate_limit"].(map[string]interface{}); ok {
@@ -267,6 +269,18 @@ func floatVal(m map[string]interface{}, key string) float64 {
 	default:
 		return 0
 	}
+}
+
+func durationVal(m map[string]interface{}, key string) time.Duration {
+	s, ok := m[key].(string)
+	if !ok || s == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d
 }
 
 func intVal(m map[string]interface{}, key string) int {

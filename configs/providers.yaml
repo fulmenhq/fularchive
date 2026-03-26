@@ -41,6 +41,7 @@ topics:
         name: OpenAI
         base_url: https://platform.openai.com
         fetch_strategy: jina
+        fetch_timeout: "90s"
         paths:
           - /docs/api-reference/chat
           - /docs/api-reference/responses

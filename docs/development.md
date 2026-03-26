@@ -63,13 +63,42 @@ Provider credentials (e.g., `OPENAI_API_KEY`, `GITHUB_TOKEN`) are used only for 
 
 ## Running a Sync
 
+At least one selector is required: `--all`, `--provider`, or `--topic`.
+
 ```bash
-# All providers
+# All enabled providers
 ./bin/refbolt sync --all --verbose
+
+# Specific providers by slug
+./bin/refbolt sync --provider openai --provider anthropic
+
+# All providers in a topic
+./bin/refbolt sync --topic llm-api
+
+# Union: topic + explicit provider
+./bin/refbolt sync --topic llm-api --provider trino
+
+# Exclude from --all
+./bin/refbolt sync --all --exclude-provider trino
 
 # Output lands in the archive_root (default: /data/archive)
 # Override with REFBOLT_ARCHIVE_ROOT=/tmp/archive
 ```
+
+### Selection Semantics
+
+| Flag                 | Behavior                                                    |
+| -------------------- | ----------------------------------------------------------- |
+| `--all`              | All enabled providers                                       |
+| `--provider <slug>`  | Specific provider(s), ignores `enabled: false` (repeatable) |
+| `--topic <slug>`     | All enabled providers in topic(s) (repeatable)              |
+| `--exclude-provider` | Remove from resolved set after union + enabled filtering    |
+
+- `--provider` overrides `enabled: false` (explicit request wins)
+- `--all` and `--topic` skip providers with `enabled: false`
+- Unknown slugs produce an error
+- Same slug in `--provider` and `--exclude-provider` is an error
+- Empty resolved set after filtering is an error
 
 ## Git Automation
 
