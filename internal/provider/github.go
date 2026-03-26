@@ -79,7 +79,7 @@ func NewGitHubRawFetcher(cfg ProviderConfig) (*GitHubRawFetcher, error) {
 
 	return &GitHubRawFetcher{
 		cfg:                cfg,
-		client:             newHTTPClient(cfg.EffectiveFetchTimeout()),
+		client:             newHTTPClient(),
 		apiBaseURL:         defaultGitHubAPIBaseURL,
 		rawBaseURL:         defaultGitHubRawBaseURL,
 		branch:             branch,

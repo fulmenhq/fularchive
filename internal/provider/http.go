@@ -23,7 +23,10 @@ type HTTPFetcher struct {
 	client *http.Client
 }
 
-func newHTTPClient(timeout time.Duration) *http.Client {
+// newHTTPClient creates an HTTP client without a client-level timeout.
+// Timeouts are enforced per-request via context deadlines so that Jina
+// retries can extend the deadline without being capped by the client.
+func newHTTPClient() *http.Client {
 	// Some doc sites return 404 when Go's default HTTP/2 ALPN is negotiated.
 	// Using HTTP/1.1 only resolves this compatibility issue.
 	transport := &http.Transport{
@@ -33,7 +36,6 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   timeout,
 		Transport: transport,
 	}
 }
@@ -45,7 +47,7 @@ func NewHTTPFetcher(cfg ProviderConfig) (*HTTPFetcher, error) {
 	}
 	return &HTTPFetcher{
 		cfg:    cfg,
-		client: newHTTPClient(cfg.EffectiveFetchTimeout()),
+		client: newHTTPClient(),
 	}, nil
 }
 
@@ -160,30 +162,31 @@ func (f *HTTPFetcher) fetchDirect(ctx context.Context, rawURL, archivePath strin
 // Non-timeout errors (4xx, 5xx, connection refused, etc.) are not retried.
 func (f *HTTPFetcher) fetchViaJina(ctx context.Context, rawURL, archivePath string) (*Page, error) {
 	jinaURL := "https://r.jina.ai/" + rawURL
-	return f.doJinaFetchWithRetry(ctx, jinaURL, archivePath)
+	return f.doJinaFetchWithRetry(ctx, jinaURL, rawURL, archivePath)
 }
 
 // doJinaFetchWithRetry wraps doJinaFetch with one timeout retry at 2x timeout.
-func (f *HTTPFetcher) doJinaFetchWithRetry(ctx context.Context, fetchURL, archivePath string) (*Page, error) {
+// sourceURL is the original provider URL (for Page.SourceURL and user-facing errors).
+// fetchURL is the actual Jina proxy URL used for the HTTP request.
+func (f *HTTPFetcher) doJinaFetchWithRetry(ctx context.Context, fetchURL, sourceURL, archivePath string) (*Page, error) {
 	timeout := f.cfg.EffectiveFetchTimeout()
 
-	page, err := f.doJinaFetch(ctx, fetchURL, archivePath, timeout)
+	page, err := f.doJinaFetch(ctx, fetchURL, sourceURL, archivePath, timeout)
 	if err != nil && isTimeoutError(err) {
 		retryTimeout := timeout * 2
-		fmt.Printf("    Jina timeout for %s (%s), retrying with %s...\n", fetchURL, timeout, retryTimeout)
-		page, err = f.doJinaFetch(ctx, fetchURL, archivePath, retryTimeout)
+		fmt.Printf("    Jina timeout for %s (%s), retrying with %s...\n", sourceURL, timeout, retryTimeout)
+		page, err = f.doJinaFetch(ctx, fetchURL, sourceURL, archivePath, retryTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("fetching %s via Jina failed after retry (timeout: %s → %s): %w\n  Hint: increase fetch_timeout for this provider in providers.yaml", fetchURL, timeout, retryTimeout, err)
+			return nil, fmt.Errorf("fetching %s via Jina failed after retry (timeout: %s → %s): %w\n  Hint: increase fetch_timeout for this provider in providers.yaml", sourceURL, timeout, retryTimeout, err)
 		}
 	}
 	return page, err
 }
 
 // doJinaFetch performs a single Jina Reader fetch with the given timeout.
-func (f *HTTPFetcher) doJinaFetch(ctx context.Context, fetchURL, archivePath string, timeout time.Duration) (*Page, error) {
-
-	// Use a per-request timeout via context, not the client-level timeout,
-	// so retries can use a different deadline without rebuilding the client.
+// fetchURL is the Jina proxy URL; sourceURL is preserved in Page.SourceURL.
+func (f *HTTPFetcher) doJinaFetch(ctx context.Context, fetchURL, sourceURL, archivePath string, timeout time.Duration) (*Page, error) {
+	// Use a per-request timeout via context so retries can extend the deadline.
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -202,13 +205,13 @@ func (f *HTTPFetcher) doJinaFetch(ctx context.Context, fetchURL, archivePath str
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s via Jina: %w", fetchURL, err)
+		return nil, fmt.Errorf("fetching %s via Jina: %w", sourceURL, err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
-	if err := checkJinaResponse(resp, fetchURL); err != nil {
+	if err := checkJinaResponse(resp, sourceURL); err != nil {
 		return nil, err
 	}
 
@@ -222,7 +225,7 @@ func (f *HTTPFetcher) doJinaFetch(ctx context.Context, fetchURL, archivePath str
 	content := stripJinaHeader(body)
 
 	return &Page{
-		SourceURL: fetchURL,
+		SourceURL: sourceURL,
 		Path:      archivePath,
 		Content:   content,
 	}, nil
@@ -243,7 +246,10 @@ func isTimeoutError(err error) bool {
 
 // fetchURL does the actual HTTP GET and returns a Page.
 func (f *HTTPFetcher) fetchURL(ctx context.Context, rawURL, archivePath string) (*Page, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	reqCtx, cancel := context.WithTimeout(ctx, f.cfg.EffectiveFetchTimeout())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

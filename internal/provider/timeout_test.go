@@ -35,16 +35,19 @@ func TestJinaRetry_TimeoutThenSuccess(t *testing.T) {
 	}
 	f := &HTTPFetcher{
 		cfg:    cfg,
-		client: newHTTPClient(5 * time.Second), // Client timeout is generous; per-request context controls it.
+		client: newHTTPClient(),
 	}
 
-	// Override Jina URL to point to test server.
-	page, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "test.md")
+	// fetchURL is the Jina proxy URL (test server); sourceURL is the original page URL.
+	page, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "https://example.com/page", "test.md")
 	if err != nil {
 		t.Fatalf("expected success after retry, got: %v", err)
 	}
 	if !strings.Contains(string(page.Content), "Retried content") {
 		t.Errorf("expected retried content, got: %s", page.Content)
+	}
+	if page.SourceURL != "https://example.com/page" {
+		t.Errorf("SourceURL = %q, want original URL not Jina proxy", page.SourceURL)
 	}
 	if attempts.Load() != 2 {
 		t.Errorf("expected 2 attempts, got %d", attempts.Load())
@@ -69,10 +72,10 @@ func TestJinaRetry_NonTimeoutNotRetried(t *testing.T) {
 	}
 	f := &HTTPFetcher{
 		cfg:    cfg,
-		client: newHTTPClient(5 * time.Second),
+		client: newHTTPClient(),
 	}
 
-	_, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "test.md")
+	_, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "https://example.com/page", "test.md")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -99,15 +102,19 @@ func TestJinaRetry_BothTimeout(t *testing.T) {
 	}
 	f := &HTTPFetcher{
 		cfg:    cfg,
-		client: newHTTPClient(5 * time.Second),
+		client: newHTTPClient(),
 	}
 
-	_, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "test.md")
+	_, err := f.doJinaFetchWithRetry(context.Background(), srv.URL+"/page", "https://example.com/page", "test.md")
 	if err == nil {
 		t.Fatal("expected error after both attempts timeout")
 	}
 	if !strings.Contains(err.Error(), "Hint: increase fetch_timeout") {
 		t.Errorf("expected actionable hint in error, got: %v", err)
+	}
+	// Error should reference the source URL, not the Jina proxy URL.
+	if !strings.Contains(err.Error(), "example.com") {
+		t.Errorf("expected source URL in error, got: %v", err)
 	}
 	if attempts.Load() != 2 {
 		t.Errorf("expected 2 attempts (initial + retry), got %d", attempts.Load())
