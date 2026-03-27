@@ -85,6 +85,9 @@ func (f *HTTPFetcher) Fetch(ctx context.Context) ([]Page, error) {
 					fmt.Printf("  ⚠ %s: full-split error: %v\n", llmsFilename, fullErr)
 				}
 			}
+			// Apply base_url prefix filter for scoped providers (e.g., DO).
+			// Domain-only base URLs pass all sections (backwards-compat).
+			split = FilterByBaseURL(split, f.cfg.BaseURL)
 			pages = append(pages, split...)
 			fmt.Printf("  ✓ %s: %d sections extracted\n", llmsFilename, len(split))
 		}

@@ -223,6 +223,117 @@ Some content.
 	}
 }
 
+func TestSplitLLMSFullTxt_SourcePrefix(t *testing.T) {
+	content := []byte(`# DigitalOcean Documentation - Complete
+
+> Full text of all DigitalOcean documentation pages.
+
+---
+
+Source: https://docs.digitalocean.com/reference/api/create-token/
+
+# How to Create a Personal Access Token
+
+Create tokens from the API section of the control panel.
+
+---
+
+Source: https://docs.digitalocean.com/products/kubernetes/getting-started/
+
+# Getting Started with Kubernetes
+
+Deploy your first cluster.
+`)
+
+	pages, err := SplitLLMSFullTxt(content, "https://docs.digitalocean.com/llms-full.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("expected 2 pages, got %d", len(pages))
+	}
+	if pages[0].SourceURL != "https://docs.digitalocean.com/reference/api/create-token/" {
+		t.Errorf("page[0] SourceURL = %q", pages[0].SourceURL)
+	}
+	if pages[1].SourceURL != "https://docs.digitalocean.com/products/kubernetes/getting-started/" {
+		t.Errorf("page[1] SourceURL = %q", pages[1].SourceURL)
+	}
+	if !strings.Contains(string(pages[0].Content), "Create tokens") {
+		t.Errorf("page[0] missing expected content")
+	}
+}
+
+func TestFilterByBaseURL_Scoped(t *testing.T) {
+	pages := []Page{
+		{SourceURL: "https://docs.digitalocean.com/reference/api/create-token/", Path: "a.md"},
+		{SourceURL: "https://docs.digitalocean.com/reference/api/list-droplets/", Path: "b.md"},
+		{SourceURL: "https://docs.digitalocean.com/products/kubernetes/getting-started/", Path: "c.md"},
+		{SourceURL: "https://docs.digitalocean.com/products/spaces/overview/", Path: "d.md"},
+	}
+
+	filtered := FilterByBaseURL(pages, "https://docs.digitalocean.com/reference/api")
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 pages, got %d", len(filtered))
+	}
+	if filtered[0].Path != "a.md" || filtered[1].Path != "b.md" {
+		t.Errorf("unexpected pages: %v", filtered)
+	}
+}
+
+func TestFilterByBaseURL_DomainOnly_PassesAll(t *testing.T) {
+	pages := []Page{
+		{SourceURL: "https://platform.claude.com/docs/en/get-started", Path: "a.md"},
+		{SourceURL: "https://platform.claude.com/docs/en/tool-use", Path: "b.md"},
+	}
+
+	// Domain-only base URL → no filtering (backwards-compat with Anthropic).
+	filtered := FilterByBaseURL(pages, "https://platform.claude.com")
+	if len(filtered) != 2 {
+		t.Fatalf("expected all 2 pages to pass, got %d", len(filtered))
+	}
+}
+
+func TestFilterByBaseURL_EmptyBaseURL(t *testing.T) {
+	pages := []Page{
+		{SourceURL: "https://example.com/a", Path: "a.md"},
+	}
+	filtered := FilterByBaseURL(pages, "")
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 page, got %d", len(filtered))
+	}
+}
+
+func TestFilterByBaseURL_NoMatch(t *testing.T) {
+	pages := []Page{
+		{SourceURL: "https://docs.digitalocean.com/products/spaces/overview/", Path: "a.md"},
+	}
+	filtered := FilterByBaseURL(pages, "https://docs.digitalocean.com/reference/api")
+	if len(filtered) != 0 {
+		t.Fatalf("expected 0 pages, got %d", len(filtered))
+	}
+}
+
+func TestParseSectionURL(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+		ok   bool
+	}{
+		{"URL: https://platform.claude.com/docs/en/get-started", "https://platform.claude.com/docs/en/get-started", true},
+		{"Source: https://docs.digitalocean.com/reference/api/", "https://docs.digitalocean.com/reference/api/", true},
+		{"# Some heading", "", false},
+		{"---", "", false},
+		{"URL: ", "", false},
+		{"Source: ", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := parseSectionURL(tt.line)
+		if ok != tt.ok || got != tt.want {
+			t.Errorf("parseSectionURL(%q) = (%q, %v), want (%q, %v)", tt.line, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestLLMSFullURLToPath(t *testing.T) {
 	tests := []struct {
 		url  string
