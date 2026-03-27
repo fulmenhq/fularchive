@@ -107,8 +107,8 @@ properties:
       paths:
         type: array
         description: >-
-          List of URL path patterns to fetch, resolved relative to base_url. Supports doublestar glob patterns. Fetched in order; duplicates are deduplicated.
-        minItems: 1
+          List of URL path patterns to fetch, resolved relative to base_url. Supports doublestar glob patterns. Fetched in order; duplicates are deduplicated. Can be empty when llms_txt_url is set (bulk fetch covers all content).
+        minItems: 0
         items:
           type: string
           minLength: 1

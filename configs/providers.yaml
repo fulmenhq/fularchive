@@ -87,6 +87,46 @@ topics:
         base_url: https://docs.aws.amazon.com/bedrock/latest/APIReference
         fetch_strategy: llmstxt-hierarchical
         llms_txt_url: https://docs.aws.amazon.com/llms.txt
+      # DigitalOcean — 40MB llms-full.txt with Source: URL delimiters (4083 pages total).
+      # Scoped by base_url prefix — each entry archives only its URL prefix.
+      # All entries share the same llms_txt_url; fetch is repeated per provider.
+      # Tech debt: shared fetch cache planned for v0.0.3.
+      - slug: digitalocean-api
+        name: DigitalOcean API Reference
+        base_url: https://docs.digitalocean.com/reference/api
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-doctl
+        name: DigitalOcean doctl CLI
+        base_url: https://docs.digitalocean.com/reference/doctl
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-k8s
+        name: DigitalOcean Kubernetes
+        base_url: https://docs.digitalocean.com/products/kubernetes
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-dbs
+        name: DigitalOcean Managed Databases
+        base_url: https://docs.digitalocean.com/products/databases
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-droplets
+        name: DigitalOcean Droplets
+        base_url: https://docs.digitalocean.com/products/droplets
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-spaces
+        name: DigitalOcean Spaces
+        base_url: https://docs.digitalocean.com/products/spaces
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
   - slug: data-platform
     name: Data Platform
     description: Query engines, warehouses, and database platform docs
