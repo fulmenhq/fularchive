@@ -40,6 +40,7 @@ type GitHubRawFetcher struct {
 }
 
 type gitHubTreeResponse struct {
+	SHA       string           `json:"sha"`
 	Truncated bool             `json:"truncated"`
 	Tree      []gitHubTreeNode `json:"tree"`
 }
@@ -90,6 +91,40 @@ func NewGitHubRawFetcher(cfg ProviderConfig) (*GitHubRawFetcher, error) {
 
 func (f *GitHubRawFetcher) Name() string {
 	return f.cfg.Name
+}
+
+// CheckHints calls the GitHub Trees API and returns the tree SHA.
+// One lightweight API call — if SHA matches stored hint, skip entire fetch.
+func (f *GitHubRawFetcher) CheckHints(ctx context.Context) (FetchHint, error) {
+	var hint FetchHint
+
+	if f.branch == "HEAD" {
+		branch, err := f.resolveDefaultBranch(ctx)
+		if err != nil {
+			return hint, err
+		}
+		f.branch = branch
+	}
+
+	treeURL := fmt.Sprintf("%s/repos/%s/git/trees/%s?recursive=1",
+		strings.TrimRight(f.apiBaseURL, "/"), f.cfg.GitHubRepo, url.PathEscape(f.branch))
+
+	resp, err := f.doRequest(ctx, treeURL, map[string]string{
+		"Accept":               "application/vnd.github+json",
+		"X-GitHub-Api-Version": gitHubAPIVersion,
+	}, true)
+	if err != nil {
+		return hint, fmt.Errorf("checking GitHub tree SHA for %s: %w", f.cfg.Slug, err)
+	}
+	defer resp.Body.Close()
+
+	var payload gitHubTreeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return hint, fmt.Errorf("decoding GitHub tree response: %w", err)
+	}
+
+	hint.TreeSHA = payload.SHA
+	return hint, nil
 }
 
 // Fetch retrieves all matching Markdown files from the configured GitHub repo.

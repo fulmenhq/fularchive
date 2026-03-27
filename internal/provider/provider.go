@@ -83,6 +83,21 @@ type Fetcher interface {
 	Fetch(ctx context.Context) ([]Page, error)
 }
 
+// FetchHint holds strategy-specific metadata for incremental sync skip logic.
+type FetchHint struct {
+	ETag          string `json:"etag,omitempty"`
+	LastModified  string `json:"last_modified,omitempty"`
+	ContentLength int64  `json:"content_length,omitempty"`
+	TreeSHA       string `json:"tree_sha,omitempty"`
+}
+
+// HintChecker is an optional interface that fetchers can implement to
+// support incremental sync. CheckHints returns the current upstream hints
+// without downloading content, allowing the sync layer to skip unchanged providers.
+type HintChecker interface {
+	CheckHints(ctx context.Context) (FetchHint, error)
+}
+
 // Registry maps provider slugs to their fetcher constructors.
 var registry = map[string]func(cfg ProviderConfig) (Fetcher, error){}
 

@@ -55,6 +55,49 @@ func (f *HTTPFetcher) Name() string {
 	return f.cfg.Name
 }
 
+// CheckHints issues a HEAD request to the provider's primary URL
+// (llms_txt_url or first path) to get ETag/Last-Modified/Content-Length
+// without downloading content. Used by incremental sync to skip unchanged providers.
+func (f *HTTPFetcher) CheckHints(ctx context.Context) (FetchHint, error) {
+	var hint FetchHint
+
+	// Determine which URL to HEAD.
+	targetURL := f.cfg.LLMSTxtURL
+	if targetURL == "" && len(f.cfg.Paths) > 0 {
+		targetURL = f.cfg.BaseURL + f.cfg.Paths[0]
+	}
+	if targetURL == "" {
+		return hint, fmt.Errorf("no URL available for HEAD check")
+	}
+
+	timeout := f.cfg.EffectiveFetchTimeout()
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, targetURL, nil)
+	if err != nil {
+		return hint, fmt.Errorf("creating HEAD request: %w", err)
+	}
+	req.Header.Set("User-Agent", "refbolt/0.1 (+https://github.com/fulmenhq/refbolt)")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return hint, fmt.Errorf("HEAD %s: %w", targetURL, err)
+	}
+	defer resp.Body.Close()
+
+	// HEAD not supported or error — caller falls back to full fetch.
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode >= 400 {
+		return hint, fmt.Errorf("HEAD %s returned %d", targetURL, resp.StatusCode)
+	}
+
+	hint.ETag = resp.Header.Get("ETag")
+	hint.LastModified = resp.Header.Get("Last-Modified")
+	hint.ContentLength = resp.ContentLength
+
+	return hint, nil
+}
+
 // Fetch retrieves pages for all configured paths.
 // If llms_txt_url is set, fetches and splits that first (most efficient).
 // Then fetches any literal paths not covered by the llms.txt content.
