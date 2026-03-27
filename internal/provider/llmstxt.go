@@ -69,8 +69,12 @@ func SplitLLMSTxt(content []byte, sourceURL string) ([]Page, error) {
 }
 
 // SplitLLMSFullTxt parses llms-full.txt files that use URL-based section delimiters.
-// This format is used by Anthropic (platform.claude.com) and potentially other providers
-// that publish full-content dumps with "URL: <page-url>" lines separating sections.
+// This format is used by Anthropic (platform.claude.com), DigitalOcean, and other
+// providers that publish full-content dumps with section URL markers.
+//
+// Recognized URL line prefixes:
+//   - "URL: <url>"    (Anthropic format)
+//   - "Source: <url>"  (DigitalOcean format)
 //
 // The section boundary pattern is:
 //
@@ -87,27 +91,25 @@ func SplitLLMSTxt(content []byte, sourceURL string) ([]Page, error) {
 // The URL line is the reliable split point. The preceding --- and # Title are
 // inter-section preamble. The duplicate # Title after the URL is stripped.
 func SplitLLMSFullTxt(content []byte, sourceURL string) ([]Page, error) {
-	const urlPrefix = "URL: "
-
 	var pages []Page
 	var currentURL string
 	var currentContent bytes.Buffer
 	var skipNextHeading bool
 
 	scanner := bufio.NewScanner(bytes.NewReader(content))
-	// Anthropic's llms-full.txt is ~24MB; increase scanner buffer.
+	// Large llms-full.txt files (Anthropic ~24MB, DO ~40MB); increase scanner buffer.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if strings.HasPrefix(line, urlPrefix) {
+		if sectionURL, ok := parseSectionURL(line); ok {
 			// Flush the previous section.
 			if currentURL != "" {
 				pages = append(pages, makeLLMSFullPage(currentURL, sourceURL, &currentContent))
 			}
 
-			currentURL = strings.TrimSpace(strings.TrimPrefix(line, urlPrefix))
+			currentURL = sectionURL
 			currentContent.Reset()
 			skipNextHeading = true
 			continue
@@ -191,6 +193,58 @@ func llmsFullURLToPath(rawURL string) string {
 		return "index.md"
 	}
 	return pathToArchivePath(p)
+}
+
+// parseSectionURL extracts the URL from a section delimiter line.
+// Supports "URL: <url>" (Anthropic) and "Source: <url>" (DigitalOcean).
+func parseSectionURL(line string) (string, bool) {
+	for _, prefix := range []string{"URL: ", "Source: "} {
+		if strings.HasPrefix(line, prefix) {
+			u := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			if u != "" {
+				return u, true
+			}
+		}
+	}
+	return "", false
+}
+
+// FilterByBaseURL filters pages to only those whose SourceURL starts with
+// the given baseURL prefix. When baseURL has no path beyond the domain root
+// (e.g., "https://platform.claude.com" or "https://platform.claude.com/"),
+// all pages pass through — this preserves backwards compatibility with
+// providers like Anthropic that don't scope by URL prefix.
+//
+// This enables scoped provider entries where multiple providers share the
+// same llms-full.txt but each archives only its URL prefix (e.g., DO API
+// Reference at docs.digitalocean.com/reference/api).
+func FilterByBaseURL(pages []Page, baseURL string) []Page {
+	if baseURL == "" {
+		return pages
+	}
+
+	// Parse the base URL to check if it has a meaningful path.
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return pages
+	}
+	path := strings.TrimRight(u.Path, "/")
+	if path == "" {
+		// Domain-only base URL → no filtering (backwards-compat).
+		return pages
+	}
+
+	// Normalize: ensure baseURL prefix ends without trailing slash for matching.
+	prefix := strings.TrimRight(baseURL, "/")
+
+	var filtered []Page
+	for _, p := range pages {
+		sourceNorm := strings.TrimRight(p.SourceURL, "/")
+		if strings.HasPrefix(sourceNorm, prefix) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
 }
 
 // copyBytes returns a copy of b that doesn't share the underlying array.

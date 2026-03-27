@@ -70,10 +70,8 @@ func (f *HTTPFetcher) Fetch(ctx context.Context) ([]Page, error) {
 		if err != nil {
 			fmt.Printf("  ⚠ %s: %v (falling back to individual pages)\n", llmsFilename, err)
 		} else {
-			// Save the raw file.
-			pages = append(pages, *llmsPage)
 			// Split into individual pages.
-			// Try xAI-style delimiters first, then URL-based (Anthropic-style).
+			// Try xAI-style delimiters first, then URL-based (Anthropic/DO-style).
 			split, err := SplitLLMSTxt(llmsPage.Content, f.cfg.LLMSTxtURL)
 			if err != nil {
 				fmt.Printf("  ⚠ %s: split error: %v\n", llmsFilename, err)
@@ -84,6 +82,23 @@ func (f *HTTPFetcher) Fetch(ctx context.Context) ([]Page, error) {
 				if fullErr != nil {
 					fmt.Printf("  ⚠ %s: full-split error: %v\n", llmsFilename, fullErr)
 				}
+			}
+
+			// Apply base_url prefix filter for scoped providers (e.g., DO).
+			// If filtering reduces the set, this is a scoped provider — skip
+			// the raw bulk file to avoid archiving 40MB per scoped entry.
+			// If filtering passes everything through, archive the raw file
+			// (backwards-compat with Anthropic, Pydantic, xAI).
+			preFilterCount := len(split)
+			split = FilterByBaseURL(split, f.cfg.BaseURL)
+			scoped := len(split) < preFilterCount
+
+			if scoped && len(split) == 0 {
+				return nil, fmt.Errorf("no pages matched base_url scope %q in %s", f.cfg.BaseURL, f.cfg.LLMSTxtURL)
+			}
+
+			if !scoped {
+				pages = append(pages, *llmsPage)
 			}
 			pages = append(pages, split...)
 			fmt.Printf("  ✓ %s: %d sections extracted\n", llmsFilename, len(split))
