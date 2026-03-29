@@ -55,6 +55,60 @@ func (f *HTTPFetcher) Name() string {
 	return f.cfg.Name
 }
 
+// CheckHints issues a HEAD request to the provider's primary URL
+// to get ETag/Last-Modified/Content-Length without downloading content.
+// Used by incremental sync to skip unchanged providers.
+//
+// Only safe for single-source providers (one llms_txt_url or one path).
+// Multi-path providers (e.g., OpenAI with 3 paths + openapi_url) return
+// an error — a HEAD on one path cannot represent the entire provider.
+func (f *HTTPFetcher) CheckHints(ctx context.Context) (FetchHint, error) {
+	var hint FetchHint
+
+	// Multi-source providers: refuse to offer hints.
+	// A HEAD on one URL cannot represent all upstream sources.
+	hasMultipleSources := len(f.cfg.Paths) > 1 || (len(f.cfg.Paths) > 0 && f.cfg.OpenAPIURL != "")
+	if hasMultipleSources {
+		return hint, fmt.Errorf("multi-source provider %s: HEAD check cannot represent all upstream URLs", f.cfg.Slug)
+	}
+
+	// Determine which single URL to HEAD.
+	targetURL := f.cfg.LLMSTxtURL
+	if targetURL == "" && len(f.cfg.Paths) > 0 {
+		targetURL = f.cfg.BaseURL + f.cfg.Paths[0]
+	}
+	if targetURL == "" {
+		return hint, fmt.Errorf("no URL available for HEAD check")
+	}
+
+	timeout := f.cfg.EffectiveFetchTimeout()
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, targetURL, nil)
+	if err != nil {
+		return hint, fmt.Errorf("creating HEAD request: %w", err)
+	}
+	req.Header.Set("User-Agent", "refbolt/0.1 (+https://github.com/fulmenhq/refbolt)")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return hint, fmt.Errorf("HEAD %s: %w", targetURL, err)
+	}
+	defer resp.Body.Close()
+
+	// HEAD not supported or error — caller falls back to full fetch.
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode >= 400 {
+		return hint, fmt.Errorf("HEAD %s returned %d", targetURL, resp.StatusCode)
+	}
+
+	hint.ETag = resp.Header.Get("ETag")
+	hint.LastModified = resp.Header.Get("Last-Modified")
+	hint.ContentLength = resp.ContentLength
+
+	return hint, nil
+}
+
 // Fetch retrieves pages for all configured paths.
 // If llms_txt_url is set, fetches and splits that first (most efficient).
 // Then fetches any literal paths not covered by the llms.txt content.

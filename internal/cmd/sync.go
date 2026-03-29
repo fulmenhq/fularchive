@@ -3,16 +3,19 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fulmenhq/refbolt/internal/archive"
 	"github.com/fulmenhq/refbolt/internal/config"
 	gitpkg "github.com/fulmenhq/refbolt/internal/git"
 	"github.com/fulmenhq/refbolt/internal/provider"
+	syncpkg "github.com/fulmenhq/refbolt/internal/sync"
 	"github.com/spf13/cobra"
 )
 
 var (
 	syncAll          bool
+	syncForce        bool
 	providerSlugs    []string
 	topicSlugs       []string
 	excludeProviders []string
@@ -46,8 +49,7 @@ var syncCmd = &cobra.Command{
 		writer := archive.NewWriter(archiveRoot)
 
 		// Early git pre-flight: validate client and reject pre-existing dirt
-		// before the sync writes anything. This ensures the commit message
-		// accurately describes only changes produced by this sync invocation.
+		// before the sync writes anything.
 		var gc *gitpkg.Client
 		if gitCommit {
 			var err error
@@ -69,6 +71,45 @@ var syncCmd = &cobra.Command{
 
 		for _, sp := range selected {
 			fmt.Printf("Topic: %s\n", sp.topicSlug)
+
+			// Compute config hash for this provider.
+			cfgFields := syncpkg.ProviderConfigFields(
+				sp.cfg.Slug, sp.cfg.BaseURL, string(sp.cfg.FetchStrategy),
+				sp.cfg.LLMSTxtURL, sp.cfg.GitHubRepo, sp.cfg.GitHubDocsPath,
+				sp.cfg.GitHubBranch, sp.cfg.Paths,
+			)
+			cfgHash := syncpkg.ConfigHash(cfgFields)
+
+			// Check for incremental skip (unless --force).
+			if !syncForce {
+				metaPath := syncpkg.MetaPath(archiveRoot, sp.topicSlug, sp.cfg.Slug)
+				meta, err := syncpkg.Read(metaPath)
+				if err != nil {
+					fmt.Printf("  %s: warning reading metadata: %v\n", sp.cfg.Slug, err)
+				}
+
+				if syncpkg.ShouldSkip(meta, cfgHash) {
+					// Config unchanged — check strategy-specific hints.
+					skipped := false
+
+					fetcher, fErr := provider.NewFetcher(sp.cfg)
+					if fErr == nil {
+						if hc, ok := fetcher.(provider.HintChecker); ok {
+							hint, hErr := hc.CheckHints(cmd.Context())
+							if hErr == nil {
+								skipped = hintsMatch(meta, hint)
+							}
+						}
+					}
+
+					if skipped {
+						elapsed := time.Since(meta.LastSync).Truncate(time.Minute)
+						fmt.Printf("  %s: skipped (unchanged, last sync %s ago)\n", sp.cfg.Slug, elapsed)
+						continue
+					}
+				}
+			}
+
 			fmt.Printf("  %s: fetching...\n", sp.cfg.Slug)
 
 			fetcher, err := provider.NewFetcher(sp.cfg)
@@ -83,25 +124,66 @@ var syncCmd = &cobra.Command{
 				continue
 			}
 
-			written, err := writer.Write(sp.topicSlug, sp.cfg.Slug, pages)
+			// Compute content hash from raw pages for metadata.
+			contentHash := computeContentHash(pages)
+
+			stat, err := writer.Write(sp.topicSlug, sp.cfg.Slug, pages)
 			if err != nil {
 				fmt.Printf("  %s: error writing: %v\n", sp.cfg.Slug, err)
 				continue
 			}
 
-			fmt.Printf("  %s: wrote %d files\n", sp.cfg.Slug, written)
+			// Console output with dedup stats.
+			if stat.Skipped > 0 {
+				fmt.Printf("  %s: %d files (%d unchanged, %d updated)\n",
+					sp.cfg.Slug, stat.Total, stat.Skipped, stat.Written)
+			} else {
+				fmt.Printf("  %s: wrote %d files\n", sp.cfg.Slug, stat.Total)
+			}
 
-			if written > 0 {
+			// Write sync metadata atomically (success-gated).
+			// Only update metadata when files actually changed or on cold start
+			// (no existing metadata). This prevents git noise from LastSync
+			// timestamp updates when nothing in the archive changed.
+			metaPath := syncpkg.MetaPath(archiveRoot, sp.topicSlug, sp.cfg.Slug)
+			existingMeta, _ := syncpkg.Read(metaPath)
+			isColdStart := existingMeta == nil
+
+			if stat.Written > 0 || isColdStart {
+				newMeta := &syncpkg.SyncMeta{
+					Provider:    sp.cfg.Slug,
+					Strategy:    string(sp.cfg.FetchStrategy),
+					ConfigHash:  cfgHash,
+					LastSync:    time.Now().UTC(),
+					ContentHash: contentHash,
+					FileCount:   stat.Total,
+				}
+				// Capture hints from the fetcher if available.
+				if hc, ok := fetcher.(provider.HintChecker); ok {
+					if hint, hErr := hc.CheckHints(cmd.Context()); hErr == nil {
+						newMeta.Hint = syncpkg.FetchHint{
+							ETag:          hint.ETag,
+							LastModified:  hint.LastModified,
+							ContentLength: hint.ContentLength,
+							TreeSHA:       hint.TreeSHA,
+						}
+					}
+				}
+				if wErr := syncpkg.Write(metaPath, newMeta); wErr != nil {
+					fmt.Printf("  %s: warning writing metadata: %v\n", sp.cfg.Slug, wErr)
+				}
+			}
+
+			if stat.Written > 0 {
 				syncResults = append(syncResults, gitpkg.SyncResult{
 					TopicSlug:    sp.topicSlug,
 					ProviderSlug: sp.cfg.Slug,
-					FilesWritten: written,
+					FilesWritten: stat.Written,
 				})
 			}
 		}
 
 		// Git operations (opt-in via --git-commit).
-		// Pre-flight already ran above; gc is non-nil.
 		if gitCommit && gc != nil {
 			has, err := gc.HasChanges()
 			if err != nil {
@@ -136,6 +218,39 @@ var syncCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// hintsMatch compares stored metadata hints against current upstream hints.
+func hintsMatch(meta *syncpkg.SyncMeta, hint provider.FetchHint) bool {
+	// Tree SHA match (github-raw).
+	if hint.TreeSHA != "" && meta.Hint.TreeSHA != "" {
+		return hint.TreeSHA == meta.Hint.TreeSHA
+	}
+	// ETag match.
+	if hint.ETag != "" && meta.Hint.ETag != "" {
+		return hint.ETag == meta.Hint.ETag
+	}
+	// Content-Length + Last-Modified match (both must be present).
+	if hint.ContentLength > 0 && meta.Hint.ContentLength > 0 &&
+		hint.LastModified != "" && meta.Hint.LastModified != "" {
+		return hint.ContentLength == meta.Hint.ContentLength &&
+			hint.LastModified == meta.Hint.LastModified
+	}
+	// No comparable hints — cannot skip.
+	return false
+}
+
+// computeContentHash hashes the concatenated content of all pages.
+func computeContentHash(pages []provider.Page) string {
+	var total int
+	for _, p := range pages {
+		total += len(p.Content)
+	}
+	buf := make([]byte, 0, total)
+	for _, p := range pages {
+		buf = append(buf, p.Content...)
+	}
+	return syncpkg.ContentHash(buf)
 }
 
 // selectedProvider pairs a provider config with its parent topic slug.
@@ -270,6 +385,7 @@ func resolveProviders(
 
 func init() {
 	syncCmd.Flags().BoolVar(&syncAll, "all", false, "Sync all configured providers")
+	syncCmd.Flags().BoolVar(&syncForce, "force", false, "Force re-fetch all providers, ignoring cached metadata")
 	syncCmd.Flags().StringArrayVar(&providerSlugs, "provider", nil, "Sync specific provider(s) by slug (repeatable)")
 	syncCmd.Flags().StringArrayVar(&topicSlugs, "topic", nil, "Sync all providers in topic(s) (repeatable)")
 	syncCmd.Flags().StringArrayVar(&excludeProviders, "exclude-provider", nil, "Exclude provider(s) from sync (repeatable)")
