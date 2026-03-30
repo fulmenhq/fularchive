@@ -183,6 +183,76 @@ topics:
         auth_env_var: GITHUB_TOKEN
         paths:
           - "**/*.md"
+  - slug: edge-platform
+    name: Edge Platform
+    description: Cloudflare developer platform — Workers, Pages, storage, AI
+    providers:
+      # Cloudflare docs source: cloudflare/cloudflare-docs (branch: production).
+      # 99 product folders under src/content/docs/. MDX format.
+      # Per-product llms-full.txt exists but uses YAML frontmatter delimiters
+      # (not URL:/Source:), so github-raw is the cleaner strategy for now.
+      # robots.txt explicitly AI-friendly: Content-Signal: ai-train=yes, ai-input=yes.
+      - slug: cloudflare-workers
+        name: Cloudflare Workers
+        base_url: https://developers.cloudflare.com/workers
+        fetch_strategy: github-raw
+        github_repo: cloudflare/cloudflare-docs
+        github_branch: production
+        github_docs_path: src/content/docs/workers/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.mdx"
+      - slug: cloudflare-pages
+        name: Cloudflare Pages
+        base_url: https://developers.cloudflare.com/pages
+        fetch_strategy: github-raw
+        github_repo: cloudflare/cloudflare-docs
+        github_branch: production
+        github_docs_path: src/content/docs/pages/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.mdx"
+      - slug: cloudflare-r2
+        name: Cloudflare R2
+        base_url: https://developers.cloudflare.com/r2
+        fetch_strategy: github-raw
+        github_repo: cloudflare/cloudflare-docs
+        github_branch: production
+        github_docs_path: src/content/docs/r2/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.mdx"
+      - slug: cloudflare-kv
+        name: Cloudflare KV
+        base_url: https://developers.cloudflare.com/kv
+        fetch_strategy: github-raw
+        github_repo: cloudflare/cloudflare-docs
+        github_branch: production
+        github_docs_path: src/content/docs/kv/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.mdx"
+          # P2 — uncomment as needed (same github-raw pattern):
+          # - slug: cloudflare-d1
+          #   name: Cloudflare D1
+          #   base_url: https://developers.cloudflare.com/d1
+          #   fetch_strategy: github-raw
+          #   github_repo: cloudflare/cloudflare-docs
+          #   github_branch: production
+          #   github_docs_path: src/content/docs/d1/
+          #   auth_env_var: GITHUB_TOKEN
+          #   paths:
+          #     - "**/*.mdx"
+          # - slug: cloudflare-durable-objects
+          #   name: Cloudflare Durable Objects
+          #   base_url: https://developers.cloudflare.com/durable-objects
+          #   fetch_strategy: github-raw
+          #   github_repo: cloudflare/cloudflare-docs
+          #   github_branch: production
+          #   github_docs_path: src/content/docs/durable-objects/
+          #   auth_env_var: GITHUB_TOKEN
+          #   paths:
+          #     - "**/*.mdx"
   - slug: self-hosted-suite
     name: Self-Hosted Suite
     description: Self-hosted infrastructure — file sync, groupware, email
