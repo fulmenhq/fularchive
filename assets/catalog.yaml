@@ -1,0 +1,255 @@
+# DO NOT EDIT — derived copy of configs/providers.yaml
+# Source of truth: configs/providers.yaml
+# Run 'make embed-assets' to regenerate.
+# refbolt provider configuration
+# Schema: schemas/providers/v0/providers.schema.yaml
+archive_root: /data/archive
+topics:
+  - slug: llm-api
+    name: LLM API Documentation
+    description: Frontier LLM provider API reference and guides
+    providers:
+      # xAI — best case: llms.txt gives us the entire site in one request,
+      # plus individual .md pages are available at /developers/**/*.md
+      - slug: xai
+        name: xAI / Grok
+        base_url: https://docs.x.ai
+        fetch_strategy: native
+        llms_txt_url: https://docs.x.ai/llms.txt
+        paths:
+          # Individual .md pages for targeted fetching (supplement llms.txt)
+          - /developers/introduction.md
+          - /developers/quickstart.md
+          - /developers/models.md
+          - /developers/tools/overview.md
+          - /developers/tools/function-calling.md
+          - /developers/tools/web-search.md
+          - /developers/rest-api-reference/inference/chat.md
+      # Anthropic — native llms-full.txt at platform.claude.com (24MB, 488 pages).
+      # URL-based section delimiters (not xAI-style). SplitLLMSFullTxt handles parsing.
+      # Note: llms-full.txt is at the domain root, NOT under /docs/.
+      - slug: anthropic
+        name: Anthropic
+        base_url: https://platform.claude.com/docs
+        fetch_strategy: native
+        llms_txt_url: https://platform.claude.com/llms-full.txt
+        paths:
+          # Key pages (supplement the full dump for targeted updates)
+          - /en/agents-and-tools/tool-use/overview.md
+          - /en/build-with-claude/prompt-caching.md
+          - /en/api-reference/messages.md
+      # OpenAI — no native .md or llms.txt. HTML only, requires Jina Reader.
+      # OpenAPI spec on GitHub (manual_spec branch, not master/main).
+      - slug: openai
+        name: OpenAI
+        base_url: https://platform.openai.com
+        fetch_strategy: jina
+        fetch_timeout: "90s"
+        paths:
+          - /docs/api-reference/chat
+          - /docs/api-reference/responses
+          - /docs/api-reference/assistants
+        openapi_url: https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml
+  - slug: python-libs
+    name: Python Libraries
+    description: Key Python library documentation
+    providers:
+      # Pydantic — llms-full.txt is a single 1.7MB Markdown dump (no delimiters).
+      # Individual .md pages also available via MkDocs at /concepts/*/index.md.
+      - slug: pydantic
+        name: Pydantic
+        base_url: https://docs.pydantic.dev/latest
+        fetch_strategy: native
+        llms_txt_url: https://docs.pydantic.dev/latest/llms-full.txt
+        paths:
+          # Key reference pages (fetched individually as supplements)
+          - /concepts/models/index.md
+          - /concepts/fields/index.md
+          - /concepts/validators/index.md
+          - /concepts/serialization/index.md
+          - /concepts/config/index.md
+  - slug: cloud-infra
+    name: Cloud Infrastructure
+    description: AWS and cloud provider service documentation (opt-in by service)
+    providers:
+      # AWS uses hierarchical llms.txt: top-level index at docs.aws.amazon.com/llms.txt
+      # links to per-service llms.txt files. Each service/guide is a separate provider
+      # entry — no monolithic "aws" provider. See docs/providers/README.md for details.
+      - slug: aws-glue-dg
+        name: AWS Glue Developer Guide
+        base_url: https://docs.aws.amazon.com/glue/latest/dg
+        fetch_strategy: llmstxt-hierarchical
+        llms_txt_url: https://docs.aws.amazon.com/llms.txt
+      - slug: aws-bedrock-userguide
+        name: AWS Bedrock User Guide
+        base_url: https://docs.aws.amazon.com/bedrock/latest/userguide
+        fetch_strategy: llmstxt-hierarchical
+        llms_txt_url: https://docs.aws.amazon.com/llms.txt
+      - slug: aws-bedrock-apiref
+        name: AWS Bedrock API Reference
+        base_url: https://docs.aws.amazon.com/bedrock/latest/APIReference
+        fetch_strategy: llmstxt-hierarchical
+        llms_txt_url: https://docs.aws.amazon.com/llms.txt
+      # DigitalOcean — 40MB llms-full.txt with Source: URL delimiters (4083 pages total).
+      # Scoped by base_url prefix — each entry archives only its URL prefix.
+      # All entries share the same llms_txt_url; fetch is repeated per provider.
+      # Tech debt: shared fetch cache planned for v0.0.3.
+      - slug: digitalocean-api
+        name: DigitalOcean API Reference
+        base_url: https://docs.digitalocean.com/reference/api
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-doctl
+        name: DigitalOcean doctl CLI
+        base_url: https://docs.digitalocean.com/reference/doctl
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-k8s
+        name: DigitalOcean Kubernetes
+        base_url: https://docs.digitalocean.com/products/kubernetes
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-dbs
+        name: DigitalOcean Managed Databases
+        base_url: https://docs.digitalocean.com/products/databases
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-droplets
+        name: DigitalOcean Droplets
+        base_url: https://docs.digitalocean.com/products/droplets
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      - slug: digitalocean-spaces
+        name: DigitalOcean Spaces
+        base_url: https://docs.digitalocean.com/products/spaces
+        fetch_strategy: native
+        llms_txt_url: https://docs.digitalocean.com/llms-full.txt
+        paths: []
+      # Cloudflare — per-product llms-full.txt with YAML frontmatter delimiters.
+      # Three-tier architecture: /llms.txt → /workers/llms.txt → /workers/llms-full.txt.
+      # Each product is self-contained (~50-300KB). No shared bulk file.
+      # No auth required. robots.txt: Content-Signal: ai-train=yes, ai-input=yes.
+      - slug: cloudflare-workers
+        name: Cloudflare Workers
+        base_url: https://developers.cloudflare.com/workers
+        fetch_strategy: native
+        llms_txt_url: https://developers.cloudflare.com/workers/llms-full.txt
+        paths: []
+      - slug: cloudflare-pages
+        name: Cloudflare Pages
+        base_url: https://developers.cloudflare.com/pages
+        fetch_strategy: native
+        llms_txt_url: https://developers.cloudflare.com/pages/llms-full.txt
+        paths: []
+      - slug: cloudflare-r2
+        name: Cloudflare R2
+        base_url: https://developers.cloudflare.com/r2
+        fetch_strategy: native
+        llms_txt_url: https://developers.cloudflare.com/r2/llms-full.txt
+        paths: []
+      - slug: cloudflare-kv
+        name: Cloudflare KV
+        base_url: https://developers.cloudflare.com/kv
+        fetch_strategy: native
+        llms_txt_url: https://developers.cloudflare.com/kv/llms-full.txt
+        paths: []
+        # P2 Cloudflare — uncomment as needed (same native + llms_txt_url pattern):
+        # - slug: cloudflare-d1
+        #   name: Cloudflare D1
+        #   base_url: https://developers.cloudflare.com/d1
+        #   fetch_strategy: native
+        #   llms_txt_url: https://developers.cloudflare.com/d1/llms-full.txt
+        #   paths: []
+        # - slug: cloudflare-durable-objects
+        #   name: Cloudflare Durable Objects
+        #   base_url: https://developers.cloudflare.com/durable-objects
+        #   fetch_strategy: native
+        #   llms_txt_url: https://developers.cloudflare.com/durable-objects/llms-full.txt
+        #   paths: []
+  - slug: data-platform
+    name: Data Platform
+    description: Query engines, warehouses, and database platform docs
+    providers:
+      # GitHub-backed provider: authenticated GitHub API access is recommended
+      # to avoid low anonymous tree API limits during full syncs.
+      - slug: trino
+        name: Trino
+        base_url: https://trino.io/docs/current
+        fetch_strategy: github-raw
+        github_repo: trinodb/trino
+        github_docs_path: docs/src/main/sphinx/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.md"
+  - slug: container-platform
+    name: Container Platform
+    description: Kubernetes and adjacent container tooling docs
+    providers:
+      # Scope this provider tightly; the full Kubernetes docs repo is much larger.
+      # Authenticated GitHub API access is recommended for tree discovery.
+      - slug: kubernetes-kubectl
+        name: Kubernetes kubectl
+        base_url: https://kubernetes.io/docs/reference/kubectl
+        fetch_strategy: github-raw
+        github_repo: kubernetes/website
+        github_docs_path: content/en/docs/reference/kubectl/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.md"
+  - slug: collaboration
+    name: Collaboration Platforms
+    description: Team messaging and collaboration platform docs
+    providers:
+      # Mattermost — OpenAPI v4 source YAML from GitHub (56 files, ~910KB).
+      # Same github-raw strategy as Trino and kubectl.
+      - slug: mattermost-api
+        name: Mattermost REST API v4
+        base_url: https://developers.mattermost.com/api-documentation
+        fetch_strategy: github-raw
+        github_repo: mattermost/mattermost
+        github_docs_path: api/v4/source/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.yaml"
+      # Mattermost integration guides — Markdown source from developer docs repo.
+      # Covers webhooks, slash commands, bots, PATs, OAuth, plugins.
+      - slug: mattermost-integrate
+        name: Mattermost Integration Guides
+        base_url: https://developers.mattermost.com/integrate
+        fetch_strategy: github-raw
+        github_repo: mattermost/mattermost-developer-documentation
+        github_docs_path: site/content/integrate/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.md"
+  - slug: self-hosted-suite
+    name: Self-Hosted Suite
+    description: Self-hosted infrastructure — file sync, groupware, email
+    providers:
+      # Nextcloud admin manual — RST source from Sphinx, published to docs.nextcloud.com.
+      # Single repo has 3 manuals; we start with admin only (deployment focus).
+      - slug: nextcloud-admin
+        name: Nextcloud Administration Manual
+        base_url: https://docs.nextcloud.com/server/latest/admin_manual
+        fetch_strategy: github-raw
+        github_repo: nextcloud/documentation
+        github_docs_path: admin_manual/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.rst"
+      # Stalwart Mail Server — Docusaurus Markdown source, published to stalw.art/docs/.
+      # Single cohesive manual covering JMAP, IMAP, SMTP, CalDAV, spam, clustering.
+      - slug: stalwart
+        name: Stalwart Mail Server Documentation
+        base_url: https://stalw.art/docs
+        fetch_strategy: github-raw
+        github_repo: stalwartlabs/website
+        github_docs_path: docs/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "**/*.md"

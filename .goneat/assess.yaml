@@ -6,7 +6,8 @@ lint:
     paths:
       - ".github/workflows/**/*.yml"
       - ".github/workflows/**/*.yaml"
-    ignore: []
+    ignore:
+      - "assets/**"
   shell:
     shfmt:
       enabled: true
