@@ -5,7 +5,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var verbose bool
+var (
+	verbose    bool
+	configFlag string
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "refbolt",
@@ -14,12 +17,25 @@ var rootCmd = &cobra.Command{
 into date-versioned Markdown + JSON archives for offline use.`,
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return config.Load()
+		// init and validate handle their own config loading.
+		if cmd.Name() == "init" || cmd.Name() == "version" {
+			return nil
+		}
+
+		strict := cmd.Name() == "validate"
+		resolved := config.ResolveConfigPath(configFlag)
+
+		return config.Load(config.LoadOptions{
+			ConfigPath:  resolved,
+			Strict:      strict,
+			UseEmbedded: resolved == "",
+		})
 	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to providers config file")
 }
 
 // Execute runs the root command.

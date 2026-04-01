@@ -10,25 +10,35 @@ import (
 	"time"
 
 	"github.com/fulmenhq/gofulmen/logging"
-	"github.com/fulmenhq/gofulmen/schema"
 	"github.com/fulmenhq/refbolt/internal/provider"
+	"github.com/santhosh-tekuri/jsonschema/v5"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	schemaID  = "providers/v0/providers"
-	envPrefix = "REFBOLT"
-)
+const envPrefix = "REFBOLT"
 
 var (
-	cfg *viper.Viper
-	log *logging.Logger
+	cfg        *viper.Viper
+	log        *logging.Logger
+	configUsed string // resolved config source for reporting
 )
 
-// Load initializes configuration from defaults, config file, and env vars.
-// If a config file is found, it is validated against the providers schema.
-func Load() error {
+// LoadOptions controls how configuration is loaded.
+type LoadOptions struct {
+	// ConfigPath is the resolved config file path. Empty means use embedded catalog.
+	ConfigPath string
+	// Strict enables strict validation (errors instead of warnings).
+	// Used by `refbolt validate`.
+	Strict bool
+	// UseEmbedded forces use of the embedded catalog even if ConfigPath is set.
+	// Applies archive_root override for local CLI use.
+	UseEmbedded bool
+}
+
+// Load initializes configuration from the resolved config source and env vars.
+// The caller (root command) is responsible for config path resolution.
+func Load(opts LoadOptions) error {
 	var err error
 	log, err = logging.NewCLI("refbolt")
 	if err != nil {
@@ -45,92 +55,182 @@ func Load() error {
 	cfg.AutomaticEnv()
 	cfg.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 
-	// Config file (optional override)
-	configPath := os.Getenv("REFBOLT_CONFIG")
-	if configPath == "" {
-		configPath = filepath.Join("configs", "providers.yaml")
-	}
-	cfg.SetConfigFile(configPath)
-	cfg.SetConfigType("yaml")
-
-	if err := cfg.ReadInConfig(); err != nil {
-		// No config file is fine — use defaults + env vars.
-		var notFound viper.ConfigFileNotFoundError
-		var pathErr *os.PathError
-		if !errors.As(err, &notFound) && !errors.As(err, &pathErr) {
-			return fmt.Errorf("reading config: %w", err)
+	if opts.UseEmbedded || opts.ConfigPath == "" {
+		// Fall back to embedded catalog.
+		if len(embeddedCatalog) == 0 {
+			log.Debug("No embedded catalog available and no config file specified")
+			return nil
 		}
-		log.Debug("No config file found, using defaults + env vars")
-		return nil
+		cfg.SetConfigType("yaml")
+		if err := cfg.ReadConfig(strings.NewReader(string(embeddedCatalog))); err != nil {
+			return fmt.Errorf("reading embedded catalog: %w", err)
+		}
+		// Override archive_root for local CLI use — /data/archive is a container path.
+		if os.Getenv("REFBOLT_ARCHIVE_ROOT") == "" {
+			cfg.Set("archive_root", "./archive")
+		}
+		configUsed = "(embedded catalog)"
+		log.Debug("Using embedded provider catalog")
+	} else {
+		cfg.SetConfigFile(opts.ConfigPath)
+		cfg.SetConfigType("yaml")
+
+		if err := cfg.ReadInConfig(); err != nil {
+			var notFound viper.ConfigFileNotFoundError
+			var pathErr *os.PathError
+			if !errors.As(err, &notFound) && !errors.As(err, &pathErr) {
+				return fmt.Errorf("reading config: %w", err)
+			}
+			log.Debug("No config file found, using defaults + env vars")
+			return nil
+		}
+		configUsed = cfg.ConfigFileUsed()
+		log.Info(fmt.Sprintf("Loaded config from %s", configUsed))
 	}
 
-	log.Info(fmt.Sprintf("Loaded config from %s", cfg.ConfigFileUsed()))
-
-	// Validate against schema if schemas directory exists.
-	if err := validateConfig(cfg.ConfigFileUsed()); err != nil {
-		return fmt.Errorf("config validation: %w", err)
+	// Validate against embedded schema.
+	if opts.Strict {
+		return validateStrict()
 	}
-
+	validatePermissive()
 	return nil
 }
 
-// validateConfig runs the loaded config file through the providers schema.
-func validateConfig(configPath string) error {
-	schemasDir := findSchemasDir()
-	if schemasDir == "" {
-		log.Debug("No schemas/ directory found, skipping validation")
+// ConfigUsed returns a description of the config source that was loaded.
+func ConfigUsed() string {
+	return configUsed
+}
+
+// validatePermissive logs schema diagnostics as warnings but does not fail.
+// Used during normal startup (sync, version, etc.).
+func validatePermissive() {
+	diags := runSchemaValidation()
+	for _, d := range diags {
+		log.Warn(fmt.Sprintf("Config validation: %s", d))
+	}
+}
+
+// validateStrict returns an error if any schema diagnostics are found.
+// Used by `refbolt validate` to provide deterministic exit codes.
+func validateStrict() error {
+	diags := runSchemaValidation()
+	if len(diags) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, d := range diags {
+		fmt.Fprintf(&b, "  %s\n", d)
+	}
+	return fmt.Errorf("config validation failed:\n%s", b.String())
+}
+
+// runSchemaValidation validates the current config against the embedded schema.
+// Returns a list of human-readable diagnostic strings.
+func runSchemaValidation() []string {
+	if len(embeddedSchema) == 0 {
 		return nil
 	}
 
-	catalog := schema.NewCatalog(schemasDir)
-
-	// Read the config file as YAML, then convert to JSON for schema validation.
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("reading config for validation: %w", err)
+	// Get the raw config bytes for validation.
+	var configBytes []byte
+	if configUsed == "(embedded catalog)" {
+		configBytes = embeddedCatalog
+	} else if configUsed != "" {
+		var err error
+		configBytes, err = os.ReadFile(configUsed)
+		if err != nil {
+			return []string{fmt.Sprintf("cannot read config for validation: %v", err)}
+		}
+	} else {
+		return nil
 	}
 
+	// Parse YAML to generic structure, then convert to JSON for schema validation.
 	var data interface{}
-	if err := yaml.Unmarshal(raw, &data); err != nil {
-		return fmt.Errorf("parsing config YAML: %w", err)
+	if err := yaml.Unmarshal(configBytes, &data); err != nil {
+		return []string{fmt.Sprintf("invalid YAML: %v", err)}
 	}
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("converting config to JSON: %w", err)
+		return []string{fmt.Sprintf("YAML→JSON conversion failed: %v", err)}
 	}
 
-	diags, err := catalog.ValidateDataByID(schemaID, jsonBytes)
+	// Convert YAML schema to JSON for the JSON Schema compiler.
+	var schemaData interface{}
+	if err := yaml.Unmarshal(embeddedSchema, &schemaData); err != nil {
+		return []string{fmt.Sprintf("schema parse failed: %v", err)}
+	}
+	schemaJSON, err := json.Marshal(schemaData)
 	if err != nil {
-		// Schema not found in catalog is non-fatal — log and continue.
-		log.Debug(fmt.Sprintf("Schema validation skipped: %v", err))
-		return nil
+		return []string{fmt.Sprintf("schema YAML→JSON conversion failed: %v", err)}
 	}
 
-	for _, d := range diags {
-		log.Warn(fmt.Sprintf("Config validation: %s: %s", d.Pointer, d.Message))
+	// Compile and validate against embedded schema.
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", strings.NewReader(string(schemaJSON))); err != nil {
+		return []string{fmt.Sprintf("schema compilation failed: %v", err)}
+	}
+	sch, err := compiler.Compile("schema.json")
+	if err != nil {
+		return []string{fmt.Sprintf("schema compilation failed: %v", err)}
+	}
+
+	var rawJSON interface{}
+	if err := json.Unmarshal(jsonBytes, &rawJSON); err != nil {
+		return []string{fmt.Sprintf("JSON parse failed: %v", err)}
+	}
+
+	if err := sch.Validate(rawJSON); err != nil {
+		var validationErr *jsonschema.ValidationError
+		if errors.As(err, &validationErr) {
+			var diags []string
+			for _, cause := range validationErr.Causes {
+				diags = append(diags, fmt.Sprintf("%s: %s", cause.InstanceLocation, cause.Message))
+			}
+			if len(diags) == 0 {
+				diags = append(diags, validationErr.Message)
+			}
+			return diags
+		}
+		return []string{err.Error()}
 	}
 
 	return nil
 }
 
-// findSchemasDir walks up from cwd looking for a schemas/ directory.
-func findSchemasDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
+// ResolveConfigPath implements the config resolution chain:
+//  1. explicit flag path (if non-empty)
+//  2. REFBOLT_CONFIG env var
+//  3. ./providers.yaml (CWD)
+//  4. ~/.config/refbolt/providers.yaml (XDG)
+//  5. "" (empty = use embedded catalog)
+func ResolveConfigPath(flagPath string) string {
+	// 1. Explicit flag.
+	if flagPath != "" {
+		return flagPath
 	}
-	for {
-		candidate := filepath.Join(dir, "schemas")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+
+	// 2. Env var.
+	if envPath := os.Getenv("REFBOLT_CONFIG"); envPath != "" {
+		return envPath
 	}
+
+	// 3. CWD.
+	if _, err := os.Stat("providers.yaml"); err == nil {
+		return "providers.yaml"
+	}
+
+	// 4. XDG.
+	home, err := os.UserHomeDir()
+	if err == nil {
+		xdg := filepath.Join(home, ".config", "refbolt", "providers.yaml")
+		if _, err := os.Stat(xdg); err == nil {
+			return xdg
+		}
+	}
+
+	// 5. Embedded catalog fallback.
 	return ""
 }
 
@@ -234,6 +334,28 @@ func Topics() []Topic {
 		topics = append(topics, topic)
 	}
 	return topics
+}
+
+// CatalogTopics returns topics from the embedded catalog (for init command).
+func CatalogTopics() ([]Topic, error) {
+	if len(embeddedCatalog) == 0 {
+		return nil, fmt.Errorf("no embedded catalog available")
+	}
+
+	// Parse embedded catalog into a temporary viper instance.
+	v := viper.New()
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(strings.NewReader(string(embeddedCatalog))); err != nil {
+		return nil, fmt.Errorf("parsing embedded catalog: %w", err)
+	}
+
+	// Temporarily swap cfg to parse topics, then restore.
+	oldCfg := cfg
+	cfg = v
+	topics := Topics()
+	cfg = oldCfg
+
+	return topics, nil
 }
 
 func stringVal(m map[string]interface{}, key string) string {
