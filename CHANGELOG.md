@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file. Older entri
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-04-02
+
+Build and distribution release.
+
+### Build
+
+- **Windows ARM64**: Add `windows/arm64` cross-compiled binary (6 platforms total, all `CGO_ENABLED=0` from single runner) (PR#28)
+- **`make install`**: Build + copy to `~/.local/bin` (INSTALL_DIR overridable) (PR#28)
+- **Scoop**: Manifest in `fulmenhq/scoop-bucket` with x64 + ARM64 Windows support (PR#28)
+
+### Documentation
+
+- **docs/cicd.md**: CGO_ENABLED=0 rationale, cross-compilation explanation, 6-platform build table, package distribution channels, migration notes for future CGO needs (PR#28)
+- **RELEASE_CHECKLIST.md**: Add Scoop update step after Homebrew (PR#28)
+
 ## [0.0.2] - 2026-04-02
 
 16 new providers, incremental sync, user-facing config, and public-readiness.

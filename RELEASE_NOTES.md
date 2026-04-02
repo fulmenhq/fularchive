@@ -4,6 +4,33 @@ This document tracks release notes for refbolt releases.
 
 > **Convention**: Keep only the latest 3 releases here to prevent file bloat. Older releases are archived in `docs/releases/`.
 
+## [0.0.3] - 2026-04-02
+
+**Windows ARM64, Scoop support, and `make install`.**
+
+### Highlights
+
+- **6-platform builds**: Added `windows/arm64` — all cross-compiled from single runner (`CGO_ENABLED=0`)
+- **`make install`**: Build + copy to `~/.local/bin` for local development
+- **Scoop (Windows)**: `scoop bucket add fulmenhq https://github.com/fulmenhq/scoop-bucket && scoop install refbolt`
+- **CI/CD docs**: Full cross-compilation rationale, build target table, package distribution channels
+
+### Install
+
+```bash
+# macOS
+brew install fulmenhq/tap/refbolt
+
+# Windows
+scoop bucket add fulmenhq https://github.com/fulmenhq/scoop-bucket
+scoop install refbolt
+
+# From source
+make install    # → ~/.local/bin/refbolt
+```
+
+---
+
 ## [0.0.2] - 2026-04-02
 
 **16 new providers, incremental sync, user-facing config, and public-readiness.**
