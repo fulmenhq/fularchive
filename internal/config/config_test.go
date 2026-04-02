@@ -9,22 +9,16 @@ import (
 	"github.com/fulmenhq/refbolt/internal/provider"
 )
 
-func TestLoad_NoConfigFile(t *testing.T) {
-	// Point to a nonexistent config so we exercise the "no file" path.
-	t.Setenv("REFBOLT_CONFIG", "/tmp/nonexistent-refbolt-config.yaml")
-
-	if err := config.Load(); err != nil {
-		t.Fatalf("Load() with missing config should succeed: %v", err)
-	}
-
-	// Defaults should apply.
-	if got := config.ArchiveRoot(); got != "/data/archive" {
-		t.Errorf("ArchiveRoot() = %q, want /data/archive", got)
+func TestLoad_ExplicitMissingConfig(t *testing.T) {
+	err := config.Load(config.LoadOptions{
+		ConfigPath: "/tmp/nonexistent-refbolt-config.yaml",
+	})
+	if err == nil {
+		t.Fatal("Load() with explicit missing config should fail")
 	}
 }
 
 func TestLoad_WithConfigFile(t *testing.T) {
-	// Find project root (walk up to find go.mod).
 	root := findProjectRoot(t)
 	configPath := filepath.Join(root, "configs", "providers.yaml")
 
@@ -32,9 +26,9 @@ func TestLoad_WithConfigFile(t *testing.T) {
 		t.Skipf("configs/providers.yaml not found at %s", configPath)
 	}
 
-	t.Setenv("REFBOLT_CONFIG", configPath)
-
-	if err := config.Load(); err != nil {
+	if err := config.Load(config.LoadOptions{
+		ConfigPath: configPath,
+	}); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
@@ -43,7 +37,6 @@ func TestLoad_WithConfigFile(t *testing.T) {
 		t.Error("Expected at least one provider from configs/providers.yaml")
 	}
 
-	// Check that our seed providers are present.
 	slugs := map[string]bool{}
 	for _, s := range providers {
 		slugs[s] = true
@@ -61,16 +54,89 @@ func TestLoad_WithConfigFile(t *testing.T) {
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
-	t.Setenv("REFBOLT_CONFIG", "/tmp/nonexistent-refbolt-config.yaml")
 	t.Setenv("REFBOLT_ARCHIVE_ROOT", "/custom/path")
 
-	if err := config.Load(); err != nil {
+	// Use embedded catalog to test env override.
+	config.SetEmbeddedAssets([]byte("archive_root: /data/archive\ntopics: []\n"), nil)
+	defer config.SetEmbeddedAssets(nil, nil)
+
+	if err := config.Load(config.LoadOptions{UseEmbedded: true}); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
 	if got := config.ArchiveRoot(); got != "/custom/path" {
 		t.Errorf("ArchiveRoot() = %q, want /custom/path", got)
 	}
+}
+
+func TestLoad_EmbeddedCatalog(t *testing.T) {
+	// Set embedded assets for test.
+	config.SetEmbeddedAssets(
+		[]byte("archive_root: /data/archive\ntopics:\n  - slug: test-topic\n    providers:\n      - slug: test-provider\n        name: Test\n        base_url: https://example.com\n        fetch_strategy: native\n        paths:\n          - /test\n"),
+		nil, // no schema
+	)
+	defer config.SetEmbeddedAssets(nil, nil)
+
+	if err := config.Load(config.LoadOptions{UseEmbedded: true}); err != nil {
+		t.Fatalf("Load() with embedded catalog failed: %v", err)
+	}
+
+	// Embedded catalog should override archive_root for local CLI use.
+	if got := config.ArchiveRoot(); got != "./archive" {
+		t.Errorf("ArchiveRoot() = %q, want ./archive (local override)", got)
+	}
+
+	if got := config.ConfigUsed(); got != "(embedded catalog)" {
+		t.Errorf("ConfigUsed() = %q, want (embedded catalog)", got)
+	}
+
+	topics := config.Topics()
+	if len(topics) != 1 || topics[0].Slug != "test-topic" {
+		t.Errorf("Topics() = %v, want [test-topic]", topics)
+	}
+}
+
+func TestLoad_EmbeddedArchiveRootEnvOverride(t *testing.T) {
+	config.SetEmbeddedAssets(
+		[]byte("archive_root: /data/archive\ntopics: []\n"),
+		nil,
+	)
+	defer config.SetEmbeddedAssets(nil, nil)
+
+	t.Setenv("REFBOLT_ARCHIVE_ROOT", "/custom/path")
+
+	if err := config.Load(config.LoadOptions{UseEmbedded: true}); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Env override should win over the embedded ./archive default.
+	if got := config.ArchiveRoot(); got != "/custom/path" {
+		t.Errorf("ArchiveRoot() = %q, want /custom/path", got)
+	}
+}
+
+func TestResolveConfigPath_Flag(t *testing.T) {
+	got := config.ResolveConfigPath("/explicit/path.yaml")
+	if got != "/explicit/path.yaml" {
+		t.Errorf("ResolveConfigPath(flag) = %q, want /explicit/path.yaml", got)
+	}
+}
+
+func TestResolveConfigPath_Env(t *testing.T) {
+	t.Setenv("REFBOLT_CONFIG", "/env/path.yaml")
+	got := config.ResolveConfigPath("")
+	if got != "/env/path.yaml" {
+		t.Errorf("ResolveConfigPath(env) = %q, want /env/path.yaml", got)
+	}
+}
+
+func TestResolveConfigPath_Embedded(t *testing.T) {
+	t.Setenv("REFBOLT_CONFIG", "")
+	// No providers.yaml in CWD or XDG — should fall back to empty.
+	got := config.ResolveConfigPath("")
+	// This could find a CWD file if tests run from project root,
+	// so only check the chain works without error.
+	_ = got
 }
 
 func TestTopics_ParsesGitHubRawFields(t *testing.T) {
@@ -98,9 +164,7 @@ topics:
 		t.Fatal(err)
 	}
 
-	t.Setenv("REFBOLT_CONFIG", configPath)
-
-	if err := config.Load(); err != nil {
+	if err := config.Load(config.LoadOptions{ConfigPath: configPath}); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 

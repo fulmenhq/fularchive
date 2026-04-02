@@ -1,0 +1,248 @@
+# DO NOT EDIT — derived copy of schemas/providers/v0/providers.schema.yaml
+# Source of truth: schemas/providers/v0/providers.schema.yaml
+# Run 'make embed-assets' to regenerate.
+# refbolt Providers Configuration Schema
+# Draft: JSON Schema 2020-12
+# Layout: schemas/<topic>/v0/<name>.schema.yaml
+#
+# Defines the structure for providers.yaml — the archive configuration
+# that tells refbolt what to fetch, from where, and how.
+#
+# Hierarchy: archive_root → topics[] → providers[] → paths[]
+# Topics group providers by domain (e.g., "llm-api", "cloud-docs").
+# Providers define a base URL and glob-friendly path patterns.
+"$schema": "https://json-schema.org/draft/2020-12/schema"
+"$id": "providers/v0/providers"
+title: refbolt Providers Configuration
+description: >-
+  Configuration schema for refbolt provider definitions. Controls which documentation sites are archived, under which topic grouping, and what URL paths to fetch.
+type: object
+required:
+  - archive_root
+  - topics
+properties:
+  archive_root:
+    type: string
+    description: >-
+      Base URI for the archive tree. Date-versioned provider directories are created under this root. Currently supports local file paths only; cloud storage URIs (s3://, gs://, az://) are reserved for future use. Overridable via REFBOLT_ARCHIVE_ROOT env var.
+    default: /data/archive
+    examples:
+      - /data/archive
+      - ./archive
+      - file:///home/user/.local/share/refbolt
+      # Future: s3://bucket/refbolt, gs://bucket/refbolt
+  topics:
+    type: array
+    description: >-
+      Groupings of providers by domain. Each topic produces a top-level directory in the archive tree.
+    minItems: 1
+    items:
+      "$ref": "#/$defs/topic"
+"$defs":
+  # ── Topic ────────────────────────────────────────────────────────
+  topic:
+    type: object
+    required:
+      - slug
+      - providers
+    properties:
+      slug:
+        type: string
+        description: >-
+          URL/filesystem-safe identifier for this topic. Used as the top-level directory name in the archive tree. Must be lowercase alphanumeric with hyphens only.
+        pattern: "^[a-z][a-z0-9]+(-[a-z0-9]+)*$"
+        minLength: 2
+        maxLength: 64
+        examples:
+          - llm-api
+          - cloud-docs
+          - internal-tools
+      name:
+        type: string
+        description: Human-readable display name for this topic.
+        examples:
+          - LLM API Documentation
+          - Cloud Provider Docs
+      description:
+        type: string
+        description: Optional longer description of the topic scope.
+      providers:
+        type: array
+        description: Documentation providers within this topic.
+        minItems: 1
+        items:
+          "$ref": "#/$defs/provider"
+    additionalProperties: false
+  # ── Provider ─────────────────────────────────────────────────────
+  provider:
+    type: object
+    required:
+      - slug
+      - base_url
+    properties:
+      slug:
+        type: string
+        description: >-
+          URL/filesystem-safe identifier for this provider. Used as the provider directory name under the topic. Must be lowercase alphanumeric with hyphens only.
+        pattern: "^[a-z][a-z0-9]+(-[a-z0-9]+)*$"
+        minLength: 2
+        maxLength: 64
+        examples:
+          - anthropic
+          - openai
+          - xai
+      name:
+        type: string
+        description: Human-readable display name.
+        examples:
+          - Anthropic
+          - OpenAI
+          - xAI / Grok
+      base_url:
+        type: string
+        format: uri
+        description: >-
+          Base URL for this provider's documentation site. Path patterns are resolved relative to this URL.
+        examples:
+          - https://docs.anthropic.com
+          - https://platform.openai.com
+          - https://docs.x.ai
+      paths:
+        type: array
+        description: >-
+          List of URL path patterns to fetch, resolved relative to base_url. Supports doublestar glob patterns. Fetched in order; duplicates are deduplicated. Can be empty when llms_txt_url is set (bulk fetch covers all content).
+        minItems: 0
+        default: []
+        items:
+          type: string
+          minLength: 1
+        examples:
+          - - /en/docs/build-with-claude/tool-use.md
+            - /en/docs/api-reference/**/*.md
+            - /llms-full.txt
+      # ── LLM-friendly full-site dump ───────────────────────────────
+      llms_txt_url:
+        type: string
+        format: uri
+        description: >-
+          Optional URL to a llms.txt or llms-full.txt file — a single-file Markdown dump of the entire doc site. When set, refbolt fetches this first and splits it into individual pages using section delimiters (e.g. ===/<path>===). Most efficient fetch strategy.
+        examples:
+          - https://docs.x.ai/llms.txt
+          - https://docs.anthropic.com/llms-full.txt
+      # ── Fetch strategy ───────────────────────────────────────────
+      fetch_strategy:
+        type: string
+        description: >-
+          How to fetch content from this provider. - native: Fetch .md suffix or known Markdown endpoints directly. - jina: Use Jina Reader (r.jina.ai) to convert HTML to Markdown. - auto: Try native first, fall back to Jina on failure. - github-raw: Discover Markdown via the GitHub tree API, then fetch raw file contents from raw.githubusercontent.com. - llmstxt-hierarchical: Fetch a top-level llms.txt index, find the per-service llms.txt matching base_url, and fetch/split it.
+        enum:
+          - native
+          - jina
+          - auto
+          - github-raw
+          - llmstxt-hierarchical
+        default: auto
+      github_repo:
+        type: string
+        description: >-
+          GitHub repository slug in owner/repo form for providers using the github-raw strategy.
+        pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        examples:
+          - trinodb/trino
+          - kubernetes/website
+      github_docs_path:
+        type: string
+        description: >-
+          Path prefix within the GitHub repository that contains the documentation tree for github-raw providers.
+        minLength: 1
+        examples:
+          - docs/src/main/sphinx/
+          - content/en/docs/reference/kubectl/
+      github_branch:
+        type: string
+        description: >-
+          Branch or ref to fetch from for github-raw providers. Defaults to main when omitted.
+        minLength: 1
+        examples:
+          - main
+          - master
+      # ── OpenAPI / supplementary files ────────────────────────────
+      openapi_url:
+        type: string
+        format: uri
+        description: >-
+          Optional URL to the provider's OpenAPI/JSON spec. Downloaded alongside Markdown content.
+        examples:
+          - https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml
+      # ── Rate limiting ────────────────────────────────────────────
+      rate_limit:
+        type: object
+        description: Optional rate limiting for this provider.
+        properties:
+          requests_per_second:
+            type: number
+            minimum: 0.1
+            maximum: 100
+            description: Maximum requests per second.
+          burst:
+            type: integer
+            minimum: 1
+            maximum: 50
+            description: Burst capacity above steady-state rate.
+        additionalProperties: false
+      # ── Auth (env var reference only — no secrets in config) ─────
+      auth_env_var:
+        type: string
+        description: >-
+          Name of the environment variable holding the API key or token for this provider. Used by Jina Reader or authenticated endpoints. For github-raw providers, this should normally point to GITHUB_TOKEN because anonymous GitHub API access hits 403/429 limits quickly. Secrets are NEVER stored in this config file.
+        pattern: "^[A-Z][A-Z0-9_]+$"
+        examples:
+          - JINA_API_KEY
+          - OPENAI_API_KEY
+          - GITHUB_TOKEN
+      fetch_timeout:
+        type: string
+        description: >-
+          HTTP fetch timeout for this provider. Parsed as a Go duration string (e.g., "30s", "90s", "2m"). Applies to all HTTP requests for this provider. Defaults to 30s. Increase for providers with large or JS-heavy pages that need more render time (e.g., via Jina Reader).
+        pattern: "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$"
+        default: "30s"
+        examples:
+          - "30s"
+          - "90s"
+          - "2m"
+      enabled:
+        type: boolean
+        description: Whether this provider is active. Defaults to true.
+        default: true
+    allOf:
+      - if:
+          properties:
+            fetch_strategy:
+              const: github-raw
+          required:
+            - fetch_strategy
+        then:
+          required:
+            - github_repo
+            - github_docs_path
+      - if:
+          properties:
+            fetch_strategy:
+              const: llmstxt-hierarchical
+          required:
+            - fetch_strategy
+        then:
+          required:
+            - llms_txt_url
+        else:
+          # Non-hierarchical providers must have either paths (non-empty)
+          # or llms_txt_url for bulk fetch. Prevents configs that silently
+          # fetch nothing.
+          anyOf:
+            - required:
+                - paths
+              properties:
+                paths:
+                  minItems: 1
+            - required:
+                - llms_txt_url
+    additionalProperties: false

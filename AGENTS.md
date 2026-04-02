@@ -28,6 +28,9 @@ See [3leaps-crucible agent-identity standard](https://crucible.3leaps.dev/reposi
 3. **Read `MAINTAINERS.md`** for human maintainer contacts.
 4. **Read files before editing them.**
 5. **Read the ADRs** in `docs/decisions/` — they capture key decisions on provider architecture, archive format, and container strategy.
+6. **Never edit derived files.** The `assets/` directory contains build-time copies that are overwritten by `make embed-assets`. Edit the source of truth instead:
+   - `assets/catalog.yaml` ← edit `configs/providers.yaml`
+   - `assets/schema.yaml` ← edit `schemas/providers/v0/providers.schema.yaml`
 
 ## Quick Reference
 

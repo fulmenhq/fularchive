@@ -206,7 +206,17 @@ release-upload-all: release-verify-checksums release-verify-keys ## Upload binar
 # Build
 # ─────────────────────────────────────────────────────────────────────────────
 
-build: dependencies ## Build binary for current platform
+embed-assets: ## Sync embedded assets from source of truth
+	@echo "# DO NOT EDIT — derived copy of configs/providers.yaml" > assets/catalog.yaml
+	@echo "# Source of truth: configs/providers.yaml" >> assets/catalog.yaml
+	@echo "# Run 'make embed-assets' to regenerate." >> assets/catalog.yaml
+	@cat configs/providers.yaml >> assets/catalog.yaml
+	@echo "# DO NOT EDIT — derived copy of schemas/providers/v0/providers.schema.yaml" > assets/schema.yaml
+	@echo "# Source of truth: schemas/providers/v0/providers.schema.yaml" >> assets/schema.yaml
+	@echo "# Run 'make embed-assets' to regenerate." >> assets/schema.yaml
+	@cat schemas/providers/v0/providers.schema.yaml >> assets/schema.yaml
+
+build: dependencies embed-assets ## Build binary for current platform
 	@echo "→ Building $(BINARY_NAME) v$(VERSION)..."
 	@go build -ldflags="$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 	@echo "✓ Binary built: bin/$(BINARY_NAME)"
