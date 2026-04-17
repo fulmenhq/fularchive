@@ -54,7 +54,10 @@ services:
       - .:/workspace
       - ~/.ssh:/root/.ssh:ro
     environment:
-      - REFBOLT_CONFIG=/workspace/configs/providers.yaml
+      # Honor the repo-root providers.yaml the user generated via `refbolt init`,
+      # same as the refbolt and runner services. The `.:/workspace` mount surfaces
+      # it at /workspace/providers.yaml inside the container.
+      - REFBOLT_CONFIG=/workspace/providers.yaml
       - REFBOLT_ARCHIVE_ROOT=/workspace/archive
       - REFBOLT_GIT_SAFE_DIRECTORY=/workspace
       - TZ=UTC
