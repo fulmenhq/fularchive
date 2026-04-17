@@ -140,13 +140,62 @@ docker run --rm \
   refbolt-runner:local
 ```
 
-### Planned: docker-compose
+### Available: docker-compose
 
-Daily cron via supercronic is available in the runner image. docker-compose wiring remains future work.
+A top-level `docker-compose.yml` wires the CLI and runner images together around a
+host-bind `./archive` directory. Generate a `providers.yaml` at the repo root first
+(`make build && ./bin/refbolt init --all --output providers.yaml`, or `refbolt init`
+from an installed binary); the file is gitignored and mounted read-only into the
+containers. Three services ship by default:
+
+| Service      | Purpose                       | Activation                                      |
+| ------------ | ----------------------------- | ----------------------------------------------- |
+| `refbolt`    | One-shot CLI                  | `docker compose run --rm refbolt sync --all -v` |
+| `runner`     | Scheduled runner (plain cron) | `docker compose up -d runner`                   |
+| `runner-git` | Scheduled runner with git/SSH | `docker compose --profile git up -d runner-git` |
+
+Common commands:
+
+```bash
+docker compose build                                    # build both images
+docker compose run --rm refbolt version                 # sanity-check CLI
+docker compose run --rm refbolt sync --all --verbose    # one-shot sync
+docker compose up -d runner                             # start scheduler
+docker compose logs -f runner                           # tail runner logs
+docker compose --profile git up -d runner-git           # git-aware scheduler
+docker compose down                                     # stop services (archive dir persists)
+```
+
+Archive storage expectations:
+
+- **Host bind mount is the default** — refbolt currently writes to a POSIX
+  filesystem only (`internal/archive/writer.go`), so `./archive:/data/archive`
+  keeps the snapshot tree directly visible to editors, diff tools, and anything
+  else running on the host. This matches the existing `docker run` recipes above.
+- **Named volume or NFS mount** for orchestrated or sidecar setups: add a
+  `compose.override.yml` replacing `./archive:/data/archive` with a volume
+  reference (e.g. `archive-vol:/data/archive` plus a `volumes:` block). Compose
+  merges the override automatically.
+- **Forward plan**: direct writes to object storage (S3 / R2 / GCS) are planned
+  as a new archive backend. Once that lands, ephemeral runners (cloud functions,
+  lightweight sidecars) can skip the volume entirely and archive straight to a
+  bucket. Until then, a host-accessible filesystem is required.
+
+Other notes:
+
+- `providers.yaml` is bind-mounted read-only from the project root so edits on the
+  host apply without a rebuild. `REFBOLT_CONFIG` points at the mount path.
+- The `runner-git` profile mounts `~/.ssh` read-only for signed commits and pushes.
+  Users with passphrase-protected keys or non-default agent configurations will
+  need to adjust the mount or run `ssh-agent` on the host.
+- Existing `docker run` recipes above remain valid for users who prefer them or
+  need to invoke the runner outside Compose.
 
 ### Planned: CI via GitHub Actions
 
-Daily workflow that runs sync and opens PR on changes.
+Daily workflow that runs sync and opens PR on changes. `ubuntu-latest` runners
+ship with Docker Engine + buildx preinstalled, so a future `docker compose config`
+smoke test can run without extra setup actions.
 
 ## Open Design Questions
 

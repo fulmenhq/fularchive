@@ -1,0 +1,55 @@
+# docker-compose.yml — turnkey scheduled archiving for refbolt.
+#
+# Services:
+#   refbolt    - one-shot CLI (distroless). Invoked on demand:
+#                  docker compose run --rm refbolt sync --all --verbose
+#   runner     - scheduled runner (supercronic + git + ssh). Long-running:
+#                  docker compose up -d runner
+#   runner-git - git-aware variant, activated via profile. Mounts the current
+#                worktree at /workspace and ~/.ssh for signed commits/pushes:
+#                  docker compose --profile git up -d runner-git
+#
+# Archive storage is a host bind mount (`./archive`) by default. refbolt currently
+# writes to a POSIX filesystem, so the default keeps the archive directly visible
+# to host tooling and editors. To use a managed named volume or an NFS/object mount,
+# override this file with a `compose.override.yml` — see docs/ARCHITECTURE.md.
+services:
+  refbolt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: refbolt:local
+    volumes:
+      - ./providers.yaml:/work/providers.yaml:ro
+      - ./archive:/data/archive
+    environment:
+      - REFBOLT_CONFIG=/work/providers.yaml
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    image: refbolt-runner:local
+    volumes:
+      - ./providers.yaml:/work/providers.yaml:ro
+      - ./examples/crontab:/etc/refbolt/crontab:ro
+      - ./archive:/data/archive
+    environment:
+      - REFBOLT_CONFIG=/work/providers.yaml
+      - TZ=UTC
+    restart: unless-stopped
+  runner-git:
+    profiles: ["git"]
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    image: refbolt-runner:local
+    volumes:
+      - ./examples/crontab-git:/etc/refbolt/crontab:ro
+      - .:/workspace
+      - ~/.ssh:/root/.ssh:ro
+    environment:
+      - REFBOLT_CONFIG=/workspace/configs/providers.yaml
+      - REFBOLT_ARCHIVE_ROOT=/workspace/archive
+      - REFBOLT_GIT_SAFE_DIRECTORY=/workspace
+      - TZ=UTC
+    restart: unless-stopped

@@ -28,3 +28,6 @@ coverage.html
 # Archive data (large, not committed)
 /data/
 /archive/
+
+# User-generated provider config (produced by `refbolt init`, mounted by docker-compose)
+/providers.yaml
