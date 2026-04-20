@@ -162,25 +162,35 @@ index, so selection is deterministic.
 
 Each provider writes a `.sync-meta.json` alongside its archive output at
 `<root>/<topic>/<provider>/.sync-meta.json` (outside the date directories —
-it's per-provider state, not per-snapshot).
+it's per-provider state, not per-snapshot). The file is a `SyncMeta` struct
+with these fields (`internal/sync/metadata.go`):
 
-The meta file stores:
+| Field          | Purpose                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `config_hash`  | SHA-256 of the provider's resolved config fields; invalidates meta if config changes       |
+| `last_sync`    | Timestamp of the last successful sync for this provider                                    |
+| `content_hash` | SHA-256 of the aggregate content from the previous sync                                    |
+| `file_count`   | Number of files written in the previous sync                                               |
+| `fetch_hint`   | Strategy-specific upstream signals (`etag`, `last_modified`, `content_length`, `tree_sha`) |
 
-- `config_hash` — hash of the provider's resolved config; forces re-fetch if
-  the user's `providers.yaml` entry changes.
-- `content_hash` — hash of the previous write's content; used for fast
-  no-op detection.
-- Strategy-specific fetch hints (e.g., GitHub tree SHA, llms.txt ETag) —
-  allow strategies to skip network work when the upstream is known unchanged.
+Two levels of skip during `refbolt sync`:
 
-Sync emits two levels of skip:
+1. **Fetch-level skip** — `internal/cmd/sync.go` computes the current
+   `config_hash`, reads stored meta, and calls `ShouldSkip(meta, hash)`. If
+   the config matches and the fetcher implements the `HintChecker` interface,
+   the sync command calls `CheckHints(ctx)` to pull the current upstream
+   hints (HEAD request for ETag/Last-Modified, GitHub tree SHA, etc.). If the
+   returned hint matches the stored `fetch_hint`, the provider is skipped —
+   no content download, no writer call.
+2. **Write-level dedup** — when a fetch does happen, the archive writer
+   hashes each page's content (SHA-256) against the file already on disk at
+   the same path. Matching content bumps `WriteStat.Skipped`; changed or new
+   content bumps `WriteStat.Written`.
 
-- `FetchResult.Skipped = true` — the strategy told us nothing changed upstream.
-  No writer work at all.
-- `WriteStat.Skipped` — the content matched an existing file byte-for-byte
-  (SHA-256 dedup). Disk untouched.
+`--force` on `refbolt sync` bypasses the fetch-level check entirely.
+Write-level dedup is always applied.
 
-`--force` bypasses both. Sources: `internal/sync/metadata.go`, `internal/cmd/sync.go`.
+Sources: `internal/sync/metadata.go`, `internal/provider/provider.go` (FetchHint + HintChecker interface), `internal/cmd/sync.go:83-110`, `internal/archive/writer.go:50-69`.
 
 ### 6. Archive Writer
 
@@ -201,35 +211,60 @@ Tree structure:
         └── .sync-meta.json
 ```
 
-- **Date-versioned snapshots** (`YYYY-MM-DD/`) — one per sync day. Files are
-  never modified after creation; each sync produces a new date directory.
-- **`latest/` symlink** — updated atomically to point at the most recent
-  date directory. Downstream consumers (editors, agents, diff tools) read
-  from `latest/` for always-current content.
-- **SHA-256 content dedup** — before writing, the writer hashes the new
-  content and compares against the existing file at the same path. If
-  unchanged, the write is skipped (`WriteStat.Skipped++`). This avoids
-  disk churn and keeps git diffs clean when nothing meaningful changed.
+- **Date-keyed directories** (`YYYY-MM-DD/`) — the writer formats
+  `time.Now()` to a calendar date and writes pages under that subdirectory.
+  **Same-day re-syncs reuse the directory**: changed files are overwritten
+  in place, unchanged files are skipped via SHA-256 dedup. A new calendar
+  day produces a new directory on the next sync.
+- **`latest/` symlink** — updated atomically after any write to point at
+  the current date directory. Downstream consumers (editors, agents, diff
+  tools) read from `latest/` for always-current content.
+- **SHA-256 content dedup** — before writing each page, the writer
+  compares new content against the existing file at the same path. Matching
+  content is skipped (`WriteStat.Skipped++`); changed or new content is
+  written (`WriteStat.Written++`). This avoids disk churn and keeps git
+  diffs clean when nothing meaningful changed.
 - **Symlink failures are non-fatal** — on filesystems without symlink
   support (certain Windows + FAT mounts), a warning is logged and the
   run continues.
 
 Design rationale: [DDR-0001](decisions/DDR-0001-archive-tree-structure.md).
+DDR-0001's prose says "each sync creates a new date directory" and "files
+are never modified after creation" — which describes the _target_ snapshot
+semantics, not what the current writer does within a single calendar day.
+If that gap matters for a downstream consumer, file a follow-up to either
+tighten the writer (e.g., timestamped subdirs per sync, or content-addressed
+snapshots) or relax the DDR wording.
 
 ### 7. Git Automation
 
 Optional post-sync step. Flags live on `refbolt sync`:
 
-| Flag            | Effect                                                                             |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `--git-commit`  | Stage archive changes and commit with a conventional `chore(archive): ...` message |
-| `--git-push`    | Push to the remote after commit (requires `--git-commit`)                          |
-| `--git-branch`  | Override the remote branch (default: current branch)                               |
-| `--git-trailer` | Append trailer line(s) to the commit message (repeatable)                          |
+| Flag            | Effect                                                                    |
+| --------------- | ------------------------------------------------------------------------- |
+| `--git-commit`  | Stage archive changes and commit with a structured message (format below) |
+| `--git-push`    | Push to the remote after commit (requires `--git-commit`)                 |
+| `--git-branch`  | Override the remote branch (default: current branch)                      |
+| `--git-trailer` | Append trailer line(s) to the commit message (repeatable)                 |
+
+Commit message format (`internal/git/message.go`):
+
+```
+refbolt sync: 2026-04-20
+
+Providers updated:
+- xai: 96 files (llm-api)
+- anthropic: 488 files (llm-api)
+
+Archive root: /data/archive
+
+<trailers, if any>
+```
 
 Pre-flight checks: `git` must be on PATH, the archive root must live inside a
 git worktree, and non-archive files in the worktree are left untouched (only
-files under `<archive_root>` are staged).
+files under `<archive_root>` are staged). No `--force` push; no empty commits
+(skipped if nothing changed).
 
 ## Deployment Models
 
