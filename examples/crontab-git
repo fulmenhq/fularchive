@@ -1,4 +1,7 @@
 # Standard 5-field cron format.
-# Set TZ on the container to control local schedule interpretation.
+# TZ=UTC is the recommended default (see DDR-0001): it controls both when
+# cron fires and the date used for archive directory names
+# (<archive_root>/<topic>/<provider>/YYYY-MM-DD/...). Override via the TZ
+# env var on the container to match local working hours if needed.
 # Git-aware schedule: mount a git worktree at /workspace and archive inside it.
 0 6 * * * /usr/local/bin/refbolt sync --all --verbose --git-commit --git-push

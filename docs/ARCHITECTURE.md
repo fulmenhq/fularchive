@@ -229,12 +229,6 @@ Tree structure:
   run continues.
 
 Design rationale: [DDR-0001](decisions/DDR-0001-archive-tree-structure.md).
-DDR-0001's prose says "each sync creates a new date directory" and "files
-are never modified after creation" — which describes the _target_ snapshot
-semantics, not what the current writer does within a single calendar day.
-If that gap matters for a downstream consumer, file a follow-up to either
-tighten the writer (e.g., timestamped subdirs per sync, or content-addressed
-snapshots) or relax the DDR wording.
 
 ### 7. Git Automation
 
@@ -307,9 +301,11 @@ persistent scheduler without compose.
 make docker-build-runner
 
 # Non-git scheduled sync
+# TZ=UTC keeps cron firing and archive date directories on a stable zone
+# across DST boundaries (see DDR-0001); override for local-time scheduling.
 docker run --rm \
   -e REFBOLT_CONFIG=/work/providers.yaml \
-  -e TZ=America/New_York \
+  -e TZ=UTC \
   -v ./providers.yaml:/work/providers.yaml:ro \
   -v ./archive:/data/archive \
   -v ./examples/crontab:/etc/refbolt/crontab:ro \
@@ -320,7 +316,7 @@ docker run --rm \
   -e REFBOLT_CONFIG=/workspace/providers.yaml \
   -e REFBOLT_ARCHIVE_ROOT=/workspace/archive \
   -e REFBOLT_GIT_SAFE_DIRECTORY=/workspace \
-  -e TZ=America/New_York \
+  -e TZ=UTC \
   -v "$PWD:/workspace" \
   -v ./examples/crontab-git:/etc/refbolt/crontab:ro \
   -v "$HOME/.ssh:/root/.ssh:ro" \

@@ -207,7 +207,7 @@ docker run --rm \
   -e REFBOLT_CONFIG=/workspace/providers.yaml \
   -e REFBOLT_ARCHIVE_ROOT=/workspace/archive \
   -e REFBOLT_GIT_SAFE_DIRECTORY=/workspace \
-  -e TZ=America/New_York \
+  -e TZ=UTC \
   -v "$PWD:/workspace" \
   -v ./examples/crontab-git:/etc/refbolt/crontab:ro \
   -v "$HOME/.ssh:/root/.ssh:ro" \
@@ -216,6 +216,7 @@ docker run --rm \
 
 Notes:
 
+- `TZ=UTC` keeps both cron firing and archive date directories on a stable zone across DST boundaries — the recommended default (matches `docker-compose.yml` and [DDR-0001](decisions/DDR-0001-archive-tree-structure.md#decision)). Override to a local zone (e.g., `TZ=America/New_York`) if you want the schedule to track local working hours.
 - `REFBOLT_GIT_SAFE_DIRECTORY=/workspace` avoids Git's ownership check on mounted worktrees
 - The SSH mount path above assumes the container runs as `root`; if that changes, mount keys under the active user's `HOME`
 - HTTPS auth also works if you mount a credential helper or provide `GIT_ASKPASS`
