@@ -27,10 +27,19 @@ This document tracks release notes for refbolt releases.
 
 ### Browse the catalog
 
+Quickest way to feel the new command — pick a headline provider and look:
+
+```bash
+refbolt catalog show hetzner-cloud-api      # one of the new Hetzner surfaces
+refbolt catalog show figma-api              # the new design-platform provider
+```
+
+Full command set:
+
 ```bash
 refbolt catalog list                        # all providers, table
 refbolt catalog list --topic cloud-infra    # filter by topic
-refbolt catalog show hetzner-cloud-api      # per-provider detail
+refbolt catalog show <slug>                 # per-provider detail
 refbolt catalog topics                      # topic summary + counts
 refbolt catalog list --json                 # machine-readable
 ```
