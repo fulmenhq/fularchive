@@ -168,6 +168,49 @@ topics:
         #   fetch_strategy: native
         #   llms_txt_url: https://developers.cloudflare.com/durable-objects/llms-full.txt
         #   paths: []
+      # Hetzner — multi-surface family. No llms.txt, no first-party GitHub docs
+      # repo for raw Markdown; docs.hetzner.com is JS-rendered. Cloud API spec
+      # sourced from MaximilianKoestler/hcloud-openapi (unofficial but actively
+      # maintained derivative of the official Hetzner spec — our official spec
+      # lives at docs.hetzner.cloud and is served only through the interactive
+      # viewer, not github-raw). Product docs via Jina Reader with curated
+      # paths. robots.txt permissive. See docs/providers/README.md Hetzner
+      # section for the unofficial-spec tradeoff + deferred-surface roadmap.
+      - slug: hetzner-cloud-api
+        name: Hetzner Cloud API
+        base_url: https://docs.hetzner.cloud
+        fetch_strategy: github-raw
+        github_repo: MaximilianKoestler/hcloud-openapi
+        github_docs_path: openapi/
+        auth_env_var: GITHUB_TOKEN
+        paths:
+          - "hcloud.json"
+      - slug: hetzner-cloud
+        name: Hetzner Cloud Docs
+        base_url: https://docs.hetzner.com/cloud
+        fetch_strategy: jina
+        fetch_timeout: "60s"
+        auth_env_var: JINA_API_KEY
+        paths:
+          - /servers/overview
+          - /servers/getting-started/creating-a-server
+          - /servers/cloud-server-rdns
+          - /volumes/overview
+          - /firewalls/overview
+          - /apps/overview
+          - /api/getting-started/using-api
+      - slug: hetzner-networking
+        name: Hetzner Networking Docs
+        base_url: https://docs.hetzner.com/networking
+        fetch_strategy: jina
+        fetch_timeout: "60s"
+        auth_env_var: JINA_API_KEY
+        paths:
+          - /load-balancers/overview
+          - /networks/overview
+          - /networks/technical-concepts/architecture
+          - /networks/connect-dedi-vswitch
+          - /dns/overview
   - slug: data-platform
     name: Data Platform
     description: Query engines, warehouses, and database platform docs

@@ -111,7 +111,7 @@ Sources: `internal/cmd/{init,validate,sync,version}.go`, `internal/cmd/root.go`.
 
 ### 2. Embedded Catalog and Schema
 
-The binary ships with a curated catalog of 24 providers across 8 topics plus
+The binary ships with a curated catalog of 27 providers across 8 topics plus
 the JSON Schema that validates them:
 
 - Source of truth: `configs/providers.yaml`, `schemas/providers/v0/providers.schema.yaml`

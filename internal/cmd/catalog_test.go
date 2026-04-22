@@ -132,8 +132,8 @@ func TestCatalogList_JSONEnvelope(t *testing.T) {
 	if envelope.TopicsTotal != 8 {
 		t.Errorf("topics_total = %d, want 8", envelope.TopicsTotal)
 	}
-	if envelope.ProvidersTotal != 24 {
-		t.Errorf("providers_total = %d, want 24", envelope.ProvidersTotal)
+	if envelope.ProvidersTotal != 27 {
+		t.Errorf("providers_total = %d, want 27", envelope.ProvidersTotal)
 	}
 	if envelope.Version == "" {
 		t.Error("version should not be empty")
@@ -251,14 +251,17 @@ func TestCatalogList_FilteredJSONReportsResultTotals(t *testing.T) {
 }
 
 // TestCatalogList_PluralizationSingleResult covers the edge case where the
-// result set collapses to a single provider (e.g., `--strategy jina` with
-// the current catalog); both hint-line counts become "1" and should be
-// grammatically singular.
+// result set collapses to a single provider; both hint-line counts become
+// "1" and should be grammatically singular. Filter by a topic with exactly
+// one catalog entry — `python-libs` has only pydantic and is unlikely to
+// grow in a way that would break this test (prior iterations used
+// `--strategy jina` but that became a multi-provider filter when the
+// Hetzner family landed in FA-091).
 func TestCatalogList_PluralizationSingleResult(t *testing.T) {
 	setupCatalogFixture(t)
 	clearCatalogFlags(t)
 
-	_, stderr, err := runCatalog(t, "catalog", "list", "--strategy", "jina")
+	_, stderr, err := runCatalog(t, "catalog", "list", "--topic", "python-libs")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

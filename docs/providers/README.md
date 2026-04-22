@@ -267,6 +267,92 @@ Explicitly AI-friendly: `Content-Signal: ai-train=yes, search=yes, ai-input=yes`
 
 Verified. Clean Markdown output — no JSX components, no MDX imports, no framework artifacts.
 
+## Hetzner
+
+Hetzner is a multi-surface family spanning two separate documentation sites
+with no first-party source repository or `llms.txt`. refbolt ships three
+P1 provider slugs under `cloud-infra`:
+
+### Strategy table
+
+| Slug                 | Strategy     | Source                                                                                                              | Scope                                          |
+| -------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `hetzner-cloud-api`  | `github-raw` | [`MaximilianKoestler/hcloud-openapi`](https://github.com/MaximilianKoestler/hcloud-openapi) → `openapi/hcloud.json` | Cloud API OpenAPI spec (unofficial derivative) |
+| `hetzner-cloud`      | `jina`       | `docs.hetzner.com/cloud/`                                                                                           | Cloud product docs (curated paths)             |
+| `hetzner-networking` | `jina`       | `docs.hetzner.com/networking/`                                                                                      | Networking product docs (curated paths)        |
+
+### Selection guidance
+
+Which subset should you enable?
+
+- **"I'm building against Hetzner Cloud from code."** `hetzner-cloud-api`
+  alone is usually enough — the OpenAPI spec covers every endpoint,
+  parameter, and schema. Add `hetzner-cloud` if you also want narrative
+  context (getting-started walkthroughs, conceptual explanations).
+- **"I'm operating Hetzner Cloud services (setup, troubleshooting)."**
+  `hetzner-cloud` + `hetzner-networking`. The API spec is overkill for
+  operational tasks.
+- **"I need API integration _and_ operational context."** All three.
+
+Each slug is independently opt-in via `refbolt sync --provider <slug>`,
+mirroring the AWS and DigitalOcean multi-surface pattern. `refbolt
+catalog show <slug>` renders per-surface detail with archive paths and
+credential requirements.
+
+### Known limitations
+
+1. **Unofficial OpenAPI spec — conscious tradeoff.** Hetzner publishes
+   official Cloud API specs at `docs.hetzner.cloud`, but they are served
+   only through the interactive API-reference viewer — **not hosted as
+   raw files on a public GitHub repo**, which is what our `github-raw`
+   strategy requires. The community-maintained
+   [`MaximilianKoestler/hcloud-openapi`](https://github.com/MaximilianKoestler/hcloud-openapi)
+   repo tracks the official spec and improves it for codegen
+   (consolidated components, unique operation IDs, ~1.2MB vs the official
+   ~2.9MB). Actively maintained, MIT licensed, v0.28.0 as of Nov 2025.
+   The asymmetry vs. our Figma pattern matters: Figma's official repo
+   _is_ the authoritative source; this one is a derivative, so users are
+   getting a github-raw-fetchable, codegen-friendly version of the
+   Hetzner spec — not the canonical Hetzner-published YAML.
+2. **Exit criteria for the unofficial spec.** If the upstream repo goes
+   90+ days without commits, or demonstrably diverges from the official
+   spec, we file a follow-up to reassess — either switch to a Jina-based
+   fetch of `docs.hetzner.cloud`, or disable the provider until Hetzner
+   publishes a fetchable raw spec. This is an intentional monitoring
+   task, not a scheduled migration.
+3. **Jina providers have no fetch-level skip.** `hetzner-cloud` and
+   `hetzner-networking` re-download every configured path on every sync
+   (Jina Reader exposes no cache headers). Content-hash dedup at the
+   writer level still prevents unnecessary disk writes and git churn
+   (same limitation as OpenAI).
+4. **Path curation is manual.** The YAML lists a curated starter set
+   (~7 paths for Cloud, ~5 for Networking) — not every possible page on
+   `docs.hetzner.com`. Extend per demand, not by exhaustive crawl.
+   Sitemap-based discovery (FA-052) would eliminate this when
+   prioritized.
+5. **No fallback if Jina fails.** If a page returns empty or errors after
+   FA-080's retry, it's skipped with a warning. We do not scrape the
+   JS-rendered HTML ourselves.
+
+### Deferred surfaces
+
+Not oversights — deliberate P1 scope discipline:
+
+| Slug (future)       | Strategy     | Why deferred                                                                                         |
+| ------------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `hetzner-storage`   | `jina`       | Storage Box / Storage Share — P2 if user-surveyed demand.                                            |
+| `hetzner-robot`     | `jina`       | Dedicated server / Robot panel — narrower audience.                                                  |
+| `hetzner-community` | `github-raw` | `hetzneronline/community-content` — community-authored, different editorial bar from reference docs. |
+
+To request promotion to P1, open a ticket referencing this section with
+the use case.
+
+### Status
+
+Verified. Three P1 slugs ship in this cycle. Live-fetch verification
+covers all three surfaces; see the FA-091 PR body for the smoke-test
+table.
+
 ## Mattermost
 
 **Strategy**: `github-raw`
