@@ -6,6 +6,36 @@ All notable changes to this project will be documented in this file. Older entri
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-04-22
+
+Operational foundation, provider browsing, and four new providers.
+
+### Added
+
+- **`docker-compose.yml`**: CLI service, scheduled runner, and `--profile git` variant with SSH mount. Three services around a host-bind `./archive` directory. `REFBOLT_ARCHIVE_ROOT=/data/archive` pinned on CLI + runner so writes land on the bind mount regardless of user-config `archive_root`. (PR#30)
+- **`refbolt catalog` command**: Read-only browse of the embedded catalog with registry enrichment. Subcommands `list`, `show <slug>`, `topics`. `--topic` / `--strategy` filters, `--json` envelope, "did you mean?" suggestions, stdout/stderr separation. Bypasses `config.Load` (silent-ignore of `--config` locked in by test). (PR#34)
+- **Figma REST API provider** (`figma-api`): OpenAPI 3.1.0 spec via `github-raw` from `figma/rest-api-spec`. Spec-only by design — SDR-0001 respects `developers.figma.com` robots.txt. New `design-platform` topic. (PR#36)
+- **Hetzner multi-surface family**: `hetzner-cloud-api` (OpenAPI via github-raw from `MaximilianKoestler/hcloud-openapi`), `hetzner-cloud` (Jina, narrative cloud docs), `hetzner-networking` (Jina, networking docs). User-configurable per-surface, like AWS/DO. (PR#37)
+- **Embedded registry**: `registry/providers.jsonl` (28 entries) now embedded via `go:embed` and joined by slug into `refbolt catalog` output. (PR#34)
+- **`Topic.Description` accessor**: `Topic` struct carries `Name` / `Description` from the catalog so `catalog topics` can render human-readable descriptions. (PR#34)
+
+### Changed
+
+- **README.md**: Docker section leads with `docker compose` flow (one-shot, scheduled, git-aware profile). Raw `docker run` recipes kept as scripting alternative. New "Browse the catalog" pointer. Provider count reflects 27 across 8 topics. (PR#32, PR#34, PR#36, PR#37)
+- **docs/ARCHITECTURE.md**: Full rewrite for v0.0.3 reality — real CLI surface, embedded catalog/registry, five fetch strategies with splitter variants, incremental sync (FA-095) with code pointers, date-versioned archive writer (DDR-0001), local-binary-first distribution. Dropped ghcr.io framing and commands that don't exist. (PR#33)
+- **docs/decisions/DDR-0001**: Decision and Consequences rewritten to match `internal/archive/writer.go` exactly — calendar-day keying, dedup-then-overwrite via SHA-256, `latest/` symlink semantics preserved, forward-plan note for object-store backend. (PR#35)
+- **docs/providers/README.md**: New Figma and Hetzner sections with scoping rationale and selection guidance. (PR#36, PR#37)
+- **docs/development.md**: `REFBOLT_CONFIG` row now shows the real resolution chain (was claiming a stale default); runner-git example uses repo-root `providers.yaml`; fetch-strategy table gains missing `llmstxt-hierarchical` row; archive_root default comment corrected. TZ=UTC consistency across runner examples. (PR#33, PR#35)
+- **examples/crontab, examples/crontab-git**: `TZ=UTC` guidance added with override notes for host-local schedules. (PR#35)
+
+### Fixed
+
+- **`refbolt init` emitted schema-invalid YAML**: Credential-hint comments were injected with a hardcoded 6-space indent while yaml.v3 marshals provider entries at 8 spaces — pulling every Jina/GITHUB_TOKEN provider out of its topic. `fetch_timeout` emitted compound Go duration strings (`1m30s`) that the schema's single-unit pattern rejects. Switched to `yaml.Node` `HeadComment` and single-unit-seconds format; added `TestInitCmd_RealCatalog_RoundTripsValid` regression test. (PR#30)
+- **Compose `runner-git` hardcoded wrong config path**: `REFBOLT_CONFIG=/workspace/configs/providers.yaml` archived the bundled catalog instead of the user's repo-root `providers.yaml`. Fixed to `/workspace/providers.yaml`. (PR#30)
+- **Compose missed `REFBOLT_ARCHIVE_ROOT`**: Writes landed in the container's ephemeral `/app/archive` instead of the host bind mount. Pinned on CLI + runner services. (PR#30)
+- **Catalog list filtered totals misreported**: `--topic` / `--strategy` filters returned the filtered rows but emitted full-catalog `topics_total` in JSON and stderr hint. Now describe the rendered result set. (PR#34)
+- **Singular/plural in catalog hint line**: `1 provider across 1 topic` (not `1 providers across 1 topics`). (PR#34)
+
 ## [0.0.3] - 2026-04-02
 
 Build and distribution release.
