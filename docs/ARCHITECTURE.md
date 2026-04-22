@@ -1,6 +1,6 @@
 ---
 title: "refbolt Architecture"
-description: "Component, storage, and deployment architecture for refbolt as of v0.0.3"
+description: "Component, storage, and deployment architecture for refbolt as of v0.0.4"
 author: "3leapsdave"
 date: "2026-04-20"
 status: "active"
